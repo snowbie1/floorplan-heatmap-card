@@ -82,8 +82,8 @@ export function renderField(ctx, field, view, opts) {
   const cs = field.opts.cellSize;
   // Die ImageData-Pixel sind Zellmittelpunkte; das halbe Zellmaß Versatz
   // sorgt dafür, dass die Interpolation nicht um eine halbe Zelle wandert.
-  const dx = view.toX(field.bounds.minX + cs * 0.5);
-  const dy = view.toY(field.bounds.minY + cs * 0.5);
+  const dx = view.toX(field.bounds.minX);
+  const dy = view.toY(field.bounds.minY);
   const dw = cols * cs * view.scale;
   const dh = rows * cs * view.scale;
 
