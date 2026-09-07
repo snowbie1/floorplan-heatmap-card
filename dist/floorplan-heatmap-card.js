@@ -55,6 +55,14 @@ const TRANSLATIONS = {
     'editor.sectionDisplay': 'Display',
     'editor.sectionView': 'View',
     'editor.sectionShow': 'Show',
+    'editor.sectionTimeline': 'History & Timeline',
+    'editor.showTimeline': 'Show history timeline',
+    'editor.historyHours': 'Default history range (hours)',
+    'editor.historyStepMinutes': 'History step (minutes)',
+    'editor.timelineNote':
+      'The card opens with this rolling history range. The Today / 24h / 48h / 7d selector on the card changes only the current view and does not rewrite this configuration.',
+    'editor.historyStepNote':
+      'Smaller steps give smoother playback, but create more historical frames and require more processing.',
     'editor.sectionModel': 'Model & Accuracy',
     'editor.sectionTransmittance': 'Thermal transmittance',
     'editor.fieldTitle': 'Title',
@@ -221,6 +229,14 @@ const TRANSLATIONS = {
     'editor.sectionDisplay': 'Darstellung',
     'editor.sectionView': 'Ansicht',
     'editor.sectionShow': 'Anzeigen',
+    'editor.sectionTimeline': 'Verlauf & Zeitleiste',
+    'editor.showTimeline': 'Verlaufszeitleiste anzeigen',
+    'editor.historyHours': 'Standard-Zeitraum (Stunden)',
+    'editor.historyStepMinutes': 'Zeitschritt (Minuten)',
+    'editor.timelineNote':
+      'Die Karte startet mit diesem rollierenden Verlaufszeitraum. Die Auswahl Heute / 24 Std. / 48 Std. / 7 T. in der Karte ändert nur die aktuelle Ansicht und schreibt diese Konfiguration nicht um.',
+    'editor.historyStepNote':
+      'Kleinere Schritte ergeben eine flüssigere Wiedergabe, erzeugen aber mehr Verlaufsframes und benötigen mehr Rechenleistung.',
     'editor.sectionModel': 'Modell & Genauigkeit',
     'editor.sectionTransmittance': 'Wärmedurchlässigkeit',
     'editor.fieldTitle': 'Titel',
@@ -3891,6 +3907,41 @@ class FloorplanHeatmapCardEditor extends HTMLElement {
           <div class="field" style="margin-top:8px">
             <label>${tr('editor.isothermStep')} <span class="value" data-out="isotherm_step">${cfg.isotherm_step} ${cfg.unit}</span></label>
             <input type="range" data-key="isotherm_step" min="0.1" max="2" step="0.1" value="${cfg.isotherm_step}" ${cfg.show_isotherms ? '' : 'disabled'}>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>${tr('editor.sectionTimeline')}</h3>
+          <label class="check">
+            <input type="checkbox" data-key="show_timeline" ${cfg.show_timeline ? 'checked' : ''}>
+            ${tr('editor.showTimeline')}
+          </label>
+
+          <div ${cfg.show_timeline ? '' : 'hidden'}>
+            <div class="row" style="margin-top:8px">
+              <div class="field">
+                <label>${tr('editor.historyHours')}</label>
+                <input
+                  type="number"
+                  data-key="history_hours"
+                  min="1"
+                  max="168"
+                  step="1"
+                  value="${cfg.history_hours}">
+              </div>
+              <div class="field">
+                <label>${tr('editor.historyStepMinutes')}</label>
+                <input
+                  type="number"
+                  data-key="history_step_minutes"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value="${cfg.history_step_minutes}">
+              </div>
+            </div>
+            <div class="note">${tr('editor.timelineNote')}</div>
+            <div class="note">${tr('editor.historyStepNote')}</div>
           </div>
         </div>
 
