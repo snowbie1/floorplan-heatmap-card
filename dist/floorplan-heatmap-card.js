@@ -32,6 +32,22 @@ const TRANSLATIONS = {
     'card.emptyLine2': 'Edit card → open {button} and draw rooms.',
     'card.spreadTooltip': 'Spread between warmest and coldest sensor',
 
+    'timeline.live': 'LIVE',
+    'timeline.play': 'Play',
+    'timeline.pause': 'Pause',
+    'timeline.playbackSpeed': 'Playback speed',
+    'timeline.historyRange': 'History range',
+    'timeline.today': 'Today',
+    'timeline.range24h': '24h',
+    'timeline.range48h': '48h',
+    'timeline.range7d': '7d',
+    'timeline.custom': 'Custom',
+    'timeline.loading': 'Loading history…',
+    'timeline.unavailable': 'History unavailable',
+    'timeline.noSensors': 'No sensor entities configured',
+    'timeline.sunrise': 'Sunrise',
+    'timeline.sunset': 'Sunset',
+
     'planEditor.title': 'Floor Plan & Sensors',
 
     'editor.openPlanButton': 'Edit Floor Plan & Sensors',
@@ -181,6 +197,22 @@ const TRANSLATIONS = {
     'card.emptyLine1': 'Noch kein Grundriss angelegt.',
     'card.emptyLine2': 'Karte bearbeiten → {button} öffnen und Räume zeichnen.',
     'card.spreadTooltip': 'Spreizung zwischen wärmstem und kältestem Sensor',
+
+    'timeline.live': 'LIVE',
+    'timeline.play': 'Abspielen',
+    'timeline.pause': 'Pause',
+    'timeline.playbackSpeed': 'Wiedergabegeschwindigkeit',
+    'timeline.historyRange': 'Verlaufszeitraum',
+    'timeline.today': 'Heute',
+    'timeline.range24h': '24 Std.',
+    'timeline.range48h': '48 Std.',
+    'timeline.range7d': '7 T.',
+    'timeline.custom': 'Benutzerdefiniert',
+    'timeline.loading': 'Verlauf wird geladen…',
+    'timeline.unavailable': 'Verlauf nicht verfügbar',
+    'timeline.noSensors': 'Keine Sensor-Entities konfiguriert',
+    'timeline.sunrise': 'Sonnenaufgang',
+    'timeline.sunset': 'Sonnenuntergang',
 
     'planEditor.title': 'Grundriss & Sensoren',
 
@@ -4632,6 +4664,7 @@ class FloorplanHeatmapCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._applyStaticText();
+    this._updateTimelineUi();
     this._update(false);
 
     if (this._config && this._config.show_timeline) {
@@ -4693,24 +4726,24 @@ class FloorplanHeatmapCard extends HTMLElement {
           <span class="hi"></span>
         </div>
         <div class="timeline" hidden>
-          <button class="play" type="button" title="Play" aria-label="Play">
+          <button class="play" type="button">
             <span class="play-icon" aria-hidden="true"></span>
           </button>
-          <button class="speed" type="button" title="Playback speed">1&times;</button>
-          <label class="range-wrap" title="History range">
-            <select class="range" aria-label="History range">
-              <option value="today">Today</option>
-              <option value="24h">24h</option>
-              <option value="48h">48h</option>
-              <option value="7d">7d</option>
+          <button class="speed" type="button">1&times;</button>
+          <label class="range-wrap">
+            <select class="range">
+              <option value="today"></option>
+              <option value="24h"></option>
+              <option value="48h"></option>
+              <option value="7d"></option>
             </select>
           </label>
-          <span class="time">LIVE</span>
+          <span class="time"></span>
           <div class="timeline-track">
             <div class="sun-markers"></div>
             <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
           </div>
-          <button class="live" type="button">LIVE</button>
+          <button class="live" type="button"></button>
         </div>
         <div class="empty" hidden>
           <div class="big">🏠</div>
@@ -4815,11 +4848,48 @@ class FloorplanHeatmapCard extends HTMLElement {
   _applyStaticText() {
     if (!this._resetBtn) return;
     const lang = this._lang();
+
     this._resetBtn.title = t(lang, 'card.resetViewTitle');
     this._resetBtn.textContent = `↺ ${t(lang, 'card.resetViewLabel')}`;
     this._emptyText.innerHTML =
       `${t(lang, 'card.emptyLine1')}<br>` +
       `${t(lang, 'card.emptyLine2', { button: `<b>${t(lang, 'planEditor.title')}</b>` })}`;
+
+    if (!this._timeline) return;
+
+    const playing = Boolean(this._playTimer);
+    const playLabel = t(
+      lang,
+      playing ? 'timeline.pause' : 'timeline.play'
+    );
+
+    this._timelinePlay.title = playLabel;
+    this._timelinePlay.setAttribute('aria-label', playLabel);
+
+    this._timelineSpeed.title = t(lang, 'timeline.playbackSpeed');
+
+    const rangeLabel = t(lang, 'timeline.historyRange');
+    const rangeWrap = this._timelineRange.closest('.range-wrap');
+    if (rangeWrap) rangeWrap.title = rangeLabel;
+    this._timelineRange.setAttribute('aria-label', rangeLabel);
+
+    const rangeLabels = {
+      today: t(lang, 'timeline.today'),
+      '24h': t(lang, 'timeline.range24h'),
+      '48h': t(lang, 'timeline.range48h'),
+      '7d': t(lang, 'timeline.range7d'),
+    };
+
+    for (const option of this._timelineRange.options) {
+      if (rangeLabels[option.value]) {
+        option.textContent = rangeLabels[option.value];
+      }
+    }
+
+    const liveLabel = t(lang, 'timeline.live');
+    this._timelineLive.textContent = liveLabel;
+    this._timelineLive.title = liveLabel;
+    this._timelineLive.setAttribute('aria-label', liveLabel);
   }
 
   /** Messwerte in Sensor-Reihenfolge — live oder vom gewählten Zeitpunkt. */
@@ -4914,7 +4984,9 @@ class FloorplanHeatmapCard extends HTMLElement {
 
   _formatHistoryHours(hours) {
     const value = Number(hours);
-    if (!Number.isFinite(value)) return 'Custom';
+    if (!Number.isFinite(value)) {
+      return t(this._lang(), 'timeline.custom');
+    }
     return `${Number.isInteger(value) ? value : value.toFixed(1)}h`;
   }
 
@@ -5075,8 +5147,8 @@ class FloorplanHeatmapCard extends HTMLElement {
 
       const label =
         event.type === 'sunrise'
-          ? 'Sunrise'
-          : 'Sunset';
+          ? t(this._lang(), 'timeline.sunrise')
+          : t(this._lang(), 'timeline.sunset');
 
       marker.title =
         `${label} · ${this._formatTimelineTooltip(event.time)}`;
@@ -5106,7 +5178,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     const entityIds = uniqueHistoryEntityIds(cfg.floorplan.sensors);
 
     if (!entityIds.length) {
-      this._historyError = 'No sensor entities configured';
+      this._historyError =
+        t(this._lang(), 'timeline.noSensors');
       this._updateTimelineUi();
       return;
     }
@@ -5175,7 +5248,10 @@ class FloorplanHeatmapCard extends HTMLElement {
       this._historyError =
         error && error.message
           ? error.message
-          : String(error || 'History unavailable');
+          : String(
+              error ||
+              t(this._lang(), 'timeline.unavailable')
+            );
     } finally {
       if (token !== this._historyRequestToken) return;
 
@@ -5283,9 +5359,12 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._playTimer = 0;
 
     if (this._timelinePlay) {
+      const playLabel =
+        t(this._lang(), 'timeline.play');
+
       this._timelinePlay.classList.remove('playing');
-      this._timelinePlay.title = 'Play';
-      this._timelinePlay.setAttribute('aria-label', 'Play');
+      this._timelinePlay.title = playLabel;
+      this._timelinePlay.setAttribute('aria-label', playLabel);
     }
   }
 
@@ -5364,7 +5443,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._renderSunMarkers();
 
     if (this._historyLoading) {
-      this._timelineTime.textContent = 'Loading history…';
+      this._timelineTime.textContent =
+        t(this._lang(), 'timeline.loading');
       this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
@@ -5374,7 +5454,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     }
 
     if (this._historyError) {
-      this._timelineTime.textContent = 'History unavailable';
+      this._timelineTime.textContent =
+        t(this._lang(), 'timeline.unavailable');
       this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
@@ -5384,7 +5465,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     }
 
     if (!this._history || !this._historyFrames) {
-      this._timelineTime.textContent = 'LIVE';
+      this._timelineTime.textContent =
+        t(this._lang(), 'timeline.live');
       this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
@@ -5397,12 +5479,15 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._timelineSpeed.disabled = false;
 
     const playing = Boolean(this._playTimer);
+    const playLabel =
+      t(
+        this._lang(),
+        playing ? 'timeline.pause' : 'timeline.play'
+      );
+
     this._timelinePlay.classList.toggle('playing', playing);
-    this._timelinePlay.title = playing ? 'Pause' : 'Play';
-    this._timelinePlay.setAttribute(
-      'aria-label',
-      playing ? 'Pause' : 'Play'
-    );
+    this._timelinePlay.title = playLabel;
+    this._timelinePlay.setAttribute('aria-label', playLabel);
 
     this._timelineSpeed.textContent =
       `${this._playbackSpeed}\u00D7`;
@@ -5416,7 +5501,8 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     if (live) {
       this._timelineSlider.value = String(this._historyFrames);
-      this._timelineTime.textContent = 'LIVE';
+      this._timelineTime.textContent =
+        t(this._lang(), 'timeline.live');
       this._timelineTime.title = '';
     } else {
       const index = Math.max(
