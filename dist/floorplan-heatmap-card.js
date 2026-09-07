@@ -4996,10 +4996,18 @@ const CARD_STYLES = `
     display: none !important;
   }
   .timeline .time {
-    min-width: 82px;
+    min-width: 128px;
     color: var(--primary-text-color);
     font-weight: 600;
     white-space: nowrap;
+  }
+  .timeline.compact {
+    gap: 7px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .timeline.compact .time {
+    min-width: 72px;
   }
   .timeline input[type=range] {
     flex: 1;
@@ -5014,30 +5022,80 @@ const CARD_STYLES = `
   .timeline .play,
   .timeline .speed,
   .timeline .live {
+    box-sizing: border-box;
+    height: 30px;
     border: 1px solid var(--divider-color, rgba(127,140,158,.35));
     border-radius: 999px;
-    padding: 4px 9px;
+    padding: 0 10px;
     background: transparent;
     color: var(--primary-text-color);
     font: inherit;
     font-weight: 600;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .timeline .play {
-    width: 30px;
-    height: 26px;
+    width: 36px;
     padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
   }
   .timeline .speed {
+    min-width: 42px;
+    padding: 0 8px;
+  }
+  .timeline .live {
+    min-width: 46px;
+  }
+  .timeline button:hover:not(:disabled) {
+    background: var(--secondary-background-color, rgba(127,140,158,.12));
+  }
+  .timeline button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  .timeline .play-icon {
+    position: relative;
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    color: currentColor;
+  }
+  .timeline .play-icon::before,
+  .timeline .play-icon::after {
+    content: "";
+    position: absolute;
+  }
+  .timeline .play:not(.playing) .play-icon::before {
+    left: 4px;
+    top: 2px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 10px solid currentColor;
+  }
+  .timeline .play:not(.playing) .play-icon::after {
+    display: none;
+  }
+  .timeline .play.playing .play-icon::before,
+  .timeline .play.playing .play-icon::after {
+    top: 2px;
+    width: 4px;
+    height: 12px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+  .timeline .play.playing .play-icon::before {
+    left: 3px;
+  }
+  .timeline .play.playing .play-icon::after {
+    right: 3px;
+  }
+  .timeline.compact .speed {
     min-width: 38px;
-    height: 26px;
-    padding: 0 7px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    padding: 0 6px;
   }
   .timeline .play:disabled,
   .timeline .speed:disabled,
@@ -5156,7 +5214,10 @@ class FloorplanHeatmapCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._resizeObserver && this._stage) {
-      this._resizeObserver = new ResizeObserver(() => this._scheduleRender());
+      this._resizeObserver = new ResizeObserver(() => {
+        this._scheduleRender();
+        this._updateTimelineUi();
+      });
       this._resizeObserver.observe(this._stage);
     }
   }
@@ -5196,7 +5257,9 @@ class FloorplanHeatmapCard extends HTMLElement {
           <span class="hi"></span>
         </div>
         <div class="timeline" hidden>
-          <button class="play" type="button" title="Play">&#9654;</button>
+          <button class="play" type="button" title="Play" aria-label="Play">
+            <span class="play-icon" aria-hidden="true"></span>
+          </button>
           <button class="speed" type="button" title="Playback speed">1&times;</button>
           <span class="time">LIVE</span>
           <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
@@ -5263,7 +5326,10 @@ class FloorplanHeatmapCard extends HTMLElement {
     });
 
     if (this._resizeObserver) this._resizeObserver.disconnect();
-    this._resizeObserver = new ResizeObserver(() => this._scheduleRender());
+    this._resizeObserver = new ResizeObserver(() => {
+      this._scheduleRender();
+      this._updateTimelineUi();
+    });
     this._resizeObserver.observe(this._stage);
 
     if (cfg.background) {
@@ -5542,8 +5608,9 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._playTimer = 0;
 
     if (this._timelinePlay) {
-      this._timelinePlay.textContent = '\u25B6';
+      this._timelinePlay.classList.remove('playing');
       this._timelinePlay.title = 'Play';
+      this._timelinePlay.setAttribute('aria-label', 'Play');
     }
   }
 
@@ -5554,14 +5621,48 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._update(true);
   }
 
-  _formatTimelineTime(time) {
+  _formatTimelineTime(time, compact = false) {
+    const language =
+      this._hass && this._hass.language
+        ? this._hass.language
+        : undefined;
+    const date = new Date(time);
+
+    const timeText = new Intl.DateTimeFormat(language, {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+
+    if (compact) {
+      const weekday = new Intl.DateTimeFormat(language, {
+        weekday: 'short',
+      }).format(date);
+
+      return `${weekday} ${timeText}`;
+    }
+
+    const dateText = new Intl.DateTimeFormat(language, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    })
+      .format(date)
+      .replace(/,/g, '');
+
+    return `${dateText} \u00B7 ${timeText}`;
+  }
+
+  _formatTimelineTooltip(time) {
     const language =
       this._hass && this._hass.language
         ? this._hass.language
         : undefined;
 
     return new Intl.DateTimeFormat(language, {
-      weekday: 'short',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(time));
@@ -5579,10 +5680,15 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     if (!visible) return;
 
+    const timelineWidth = this._timeline.getBoundingClientRect().width;
+    const compact = timelineWidth > 0 && timelineWidth < 560;
+    this._timeline.classList.toggle('compact', compact);
+
     this._timeline.title = this._historyError || '';
 
     if (this._historyLoading) {
       this._timelineTime.textContent = 'Loading history…';
+      this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
@@ -5592,6 +5698,7 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     if (this._historyError) {
       this._timelineTime.textContent = 'History unavailable';
+      this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
@@ -5601,6 +5708,7 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     if (!this._history || !this._historyFrames) {
       this._timelineTime.textContent = 'LIVE';
+      this._timelineTime.title = '';
       this._timelinePlay.disabled = true;
       this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
@@ -5611,10 +5719,13 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._timelinePlay.disabled = false;
     this._timelineSpeed.disabled = false;
 
-    this._timelinePlay.textContent =
-      this._playTimer ? '\u275A\u275A' : '\u25B6';
-    this._timelinePlay.title =
-      this._playTimer ? 'Pause' : 'Play';
+    const playing = Boolean(this._playTimer);
+    this._timelinePlay.classList.toggle('playing', playing);
+    this._timelinePlay.title = playing ? 'Pause' : 'Play';
+    this._timelinePlay.setAttribute(
+      'aria-label',
+      playing ? 'Pause' : 'Play'
+    );
 
     this._timelineSpeed.textContent =
       `${this._playbackSpeed}\u00D7`;
@@ -5629,6 +5740,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     if (live) {
       this._timelineSlider.value = String(this._historyFrames);
       this._timelineTime.textContent = 'LIVE';
+      this._timelineTime.title = '';
     } else {
       const index = Math.max(
         0,
@@ -5643,7 +5755,9 @@ class FloorplanHeatmapCard extends HTMLElement {
 
       this._timelineSlider.value = String(index);
       this._timelineTime.textContent =
-        this._formatTimelineTime(this._selectedHistoryTime);
+        this._formatTimelineTime(this._selectedHistoryTime, compact);
+      this._timelineTime.title =
+        this._formatTimelineTooltip(this._selectedHistoryTime);
     }
 
     this._timelineLive.disabled = live;
