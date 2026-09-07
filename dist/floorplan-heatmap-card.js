@@ -5047,6 +5047,51 @@ const CARD_STYLES = `
   .timeline .live {
     min-width: 46px;
   }
+  .timeline .range-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: var(--primary-text-color);
+  }
+  .timeline .range {
+    box-sizing: border-box;
+    height: 30px;
+    min-width: 64px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--divider-color, rgba(127,140,158,.35));
+    border-radius: 999px;
+    padding: 0 24px 0 10px;
+    background: transparent;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .timeline .range-wrap::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    opacity: 0.7;
+    pointer-events: none;
+    transform: translateY(-65%) rotate(45deg);
+  }
+  .timeline .range:hover:not(:disabled) {
+    background: var(--secondary-background-color, rgba(127,140,158,.12));
+  }
+  .timeline .range:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  .timeline .range option {
+    color: var(--primary-text-color);
+    background: var(--card-background-color, var(--ha-card-background, #fff));
+  }
   .timeline button:hover:not(:disabled) {
     background: var(--secondary-background-color, rgba(127,140,158,.12));
   }
@@ -5096,6 +5141,11 @@ const CARD_STYLES = `
   .timeline.compact .speed {
     min-width: 38px;
     padding: 0 6px;
+  }
+  .timeline.compact .range {
+    min-width: 58px;
+    padding-left: 8px;
+    padding-right: 22px;
   }
   .timeline .play:disabled,
   .timeline .speed:disabled,
@@ -5158,6 +5208,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._historyRequestToken = 0;
     this._playTimer = 0;
     this._playbackSpeed = 1;
+    this._historyRangeKey = '24h';
   }
 
   setConfig(config) {
@@ -5184,6 +5235,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._historyStepMs = 0;
     this._historyFrames = 0;
     this._selectedHistoryTime = null;
+    this._historyRangeKey = this._initialHistoryRangeKey(this._config);
+
     // Der Blickwinkel aus der Konfiguration ist der Ausgangspunkt.
     // Dreht der Betrachter danach am Modell, bleibt das eine reine
     // Ansichtssache und wird bewusst nicht in die Config zurückgeschrieben.
@@ -5261,6 +5314,14 @@ class FloorplanHeatmapCard extends HTMLElement {
             <span class="play-icon" aria-hidden="true"></span>
           </button>
           <button class="speed" type="button" title="Playback speed">1&times;</button>
+          <label class="range-wrap" title="History range">
+            <select class="range" aria-label="History range">
+              <option value="today">Today</option>
+              <option value="24h">24h</option>
+              <option value="48h">48h</option>
+              <option value="7d">7d</option>
+            </select>
+          </label>
           <span class="time">LIVE</span>
           <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
           <button class="live" type="button">LIVE</button>
@@ -5283,6 +5344,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._timeline = this.shadowRoot.querySelector('.timeline');
     this._timelinePlay = this.shadowRoot.querySelector('.timeline .play');
     this._timelineSpeed = this.shadowRoot.querySelector('.timeline .speed');
+    this._timelineRange = this.shadowRoot.querySelector('.timeline .range');
     this._timelineTime = this.shadowRoot.querySelector('.timeline .time');
     this._timelineSlider = this.shadowRoot.querySelector('.timeline-slider');
     this._timelineLive = this.shadowRoot.querySelector('.timeline .live');
@@ -5296,12 +5358,24 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._legend.hidden = !cfg.show_legend;
     this._timeline.hidden = !cfg.show_timeline;
 
+    if (this._historyRangeKey === 'config') {
+      const option = document.createElement('option');
+      option.value = 'config';
+      option.textContent = this._formatHistoryHours(cfg.history_hours);
+      this._timelineRange.prepend(option);
+    }
+    this._timelineRange.value = this._historyRangeKey;
+
     this._timelinePlay.addEventListener('click', () => {
       this._togglePlayback();
     });
 
     this._timelineSpeed.addEventListener('click', () => {
       this._cyclePlaybackSpeed();
+    });
+
+    this._timelineRange.addEventListener('change', (event) => {
+      this._setHistoryRange(event.target.value);
     });
 
     this._timelineSlider.addEventListener('input', (event) => {
@@ -5441,6 +5515,91 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._scheduleRender();
   }
 
+  _initialHistoryRangeKey(config) {
+    const hours = Number(config && config.history_hours);
+
+    if (hours === 24) return '24h';
+    if (hours === 48) return '48h';
+    if (hours === 168) return '7d';
+
+    return 'config';
+  }
+
+  _formatHistoryHours(hours) {
+    const value = Number(hours);
+    if (!Number.isFinite(value)) return 'Custom';
+    return `${Number.isInteger(value) ? value : value.toFixed(1)}h`;
+  }
+
+  _historyRangeSpec(key) {
+    const cfg = this._config;
+    const configuredHours = Number(cfg.history_hours);
+    const configuredStep = Number(cfg.history_step_minutes);
+
+    if (key === 'today') {
+      return {
+        mode: 'today',
+        stepMinutes: 15,
+      };
+    }
+
+    if (key === '48h') {
+      return {
+        mode: 'rolling',
+        hours: 48,
+        stepMinutes: configuredHours === 48 ? configuredStep : 30,
+      };
+    }
+
+    if (key === '7d') {
+      return {
+        mode: 'rolling',
+        hours: 168,
+        stepMinutes: configuredHours === 168 ? configuredStep : 60,
+      };
+    }
+
+    if (key === 'config') {
+      return {
+        mode: 'rolling',
+        hours: configuredHours,
+        stepMinutes: configuredStep,
+      };
+    }
+
+    return {
+      mode: 'rolling',
+      hours: 24,
+      stepMinutes: configuredHours === 24 ? configuredStep : 15,
+    };
+  }
+
+  _setHistoryRange(key) {
+    if (!this._config || key === this._historyRangeKey) return;
+
+    this._stopPlayback();
+
+    // Invalidate any fetch that is still in flight before starting the
+    // newly selected range.
+    this._historyRequestToken += 1;
+    this._historyRangeKey = key;
+    this._history = null;
+    this._historyLoading = false;
+    this._historyError = '';
+    this._historyStart = 0;
+    this._historyEnd = 0;
+    this._historyStepMs = 0;
+    this._historyFrames = 0;
+    this._selectedHistoryTime = null;
+
+    this._updateTimelineUi();
+    this._update(true);
+
+    if (this._hass) {
+      this._ensureHistory();
+    }
+  }
+
   async _ensureHistory() {
     const cfg = this._config;
 
@@ -5463,14 +5622,26 @@ class FloorplanHeatmapCard extends HTMLElement {
       return;
     }
 
-    const stepMs = cfg.history_step_minutes * 60 * 1000;
+    const range = this._historyRangeSpec(this._historyRangeKey);
+    const stepMinutes = Math.max(1, Number(range.stepMinutes) || 15);
+    const stepMs = stepMinutes * 60 * 1000;
+    const endMs = Date.now();
+
+    let startMs;
+
+    if (range.mode === 'today') {
+      const start = new Date(endMs);
+      start.setHours(0, 0, 0, 0);
+      startMs = start.getTime();
+    } else {
+      const hours = Math.max(1, Number(range.hours) || 24);
+      startMs = endMs - hours * 60 * 60 * 1000;
+    }
+
     const frames = Math.max(
       1,
-      Math.ceil((cfg.history_hours * 60) / cfg.history_step_minutes)
+      Math.ceil((endMs - startMs) / stepMs)
     );
-
-    const endMs = Date.now();
-    const startMs = endMs - frames * stepMs;
 
     this._historyStepMs = stepMs;
     this._historyFrames = frames;
@@ -5685,6 +5856,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._timeline.classList.toggle('compact', compact);
 
     this._timeline.title = this._historyError || '';
+    this._timelineRange.value = this._historyRangeKey;
 
     if (this._historyLoading) {
       this._timelineTime.textContent = 'Loading history…';
