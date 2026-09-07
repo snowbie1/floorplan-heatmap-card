@@ -65,6 +65,16 @@ const TRANSLATIONS = {
     'editor.paletteViridis': 'Viridis',
     'editor.paletteInferno': 'Inferno',
     'editor.paletteTurbo': 'Turbo',
+    'editor.paletteCustom': 'Custom',
+    'editor.paletteStops': 'Custom palette stops',
+    'editor.palettePosition': 'Position',
+    'editor.paletteColor': 'Color',
+    'editor.paletteAddStop': 'Add stop',
+    'editor.paletteRemoveStop': 'Remove stop',
+    'editor.paletteStopsNote':
+      'Position runs from 0 to 1. Stops are sorted automatically; at least two are required.',
+    'editor.paletteStopsInvalid':
+      'Use at least two valid stops with positions from 0 to 1 and valid hex colors.',
 
     'label.exterior': 'Exterior wall',
     'label.interior': 'Interior wall',
@@ -222,6 +232,16 @@ const TRANSLATIONS = {
     'editor.paletteViridis': 'Viridis',
     'editor.paletteInferno': 'Inferno',
     'editor.paletteTurbo': 'Turbo',
+    'editor.paletteCustom': 'Benutzerdefiniert',
+    'editor.paletteStops': 'Benutzerdefinierte Farbstopps',
+    'editor.palettePosition': 'Position',
+    'editor.paletteColor': 'Farbe',
+    'editor.paletteAddStop': 'Stopp hinzufügen',
+    'editor.paletteRemoveStop': 'Stopp entfernen',
+    'editor.paletteStopsNote':
+      'Die Position reicht von 0 bis 1. Stopps werden automatisch sortiert; mindestens zwei sind erforderlich.',
+    'editor.paletteStopsInvalid':
+      'Mindestens zwei gültige Stopps mit Positionen von 0 bis 1 und gültigen Hex-Farben verwenden.',
 
     'label.exterior': 'Außenwand',
     'label.interior': 'Innenwand',
