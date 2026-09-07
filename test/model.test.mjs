@@ -8,7 +8,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { roomAreaSqm, roomSizeMeters, resizeRoomPoints } from '../src/model.js';
+import {
+  normalizeConfig,
+  roomAreaSqm,
+  roomSizeMeters,
+  resizeRoomPoints,
+} from '../src/model.js';
 
 const PPM = 50;
 const rect = (w, h, x = 0, y = 0) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
@@ -54,4 +59,95 @@ test('resizeRoomPoints lässt eine Achse ohne Ausdehnung oder ohne Zielmaß unan
   // Kein (bzw. ungültiges) Zielmaß für Y ⇒ nur X wird skaliert.
   const onlyX = resizeRoomPoints(rect(100, 100), 300, 0);
   assert.deepEqual(onlyX, [[0, 0], [300, 0], [300, 100], [0, 100]]);
+});
+
+test('alte Türen bekommen die bisherige Scharnier- und Schwenkrichtung', () => {
+  const config = normalizeConfig({
+    floorplan: {
+      openings: [
+        {
+          id: 'door-old',
+          x: 100,
+          y: 100,
+          angle: 0,
+          width: 45,
+          type: 'door',
+        },
+      ],
+    },
+  });
+
+  const door = config.floorplan.openings[0];
+
+  assert.equal(door.hinge, 'start');
+  assert.equal(door.swing, -1);
+});
+
+test('Tür-Scharnier und Schwenkrichtung bleiben beim Normalisieren erhalten', () => {
+  const config = normalizeConfig({
+    floorplan: {
+      openings: [
+        {
+          id: 'door-end',
+          x: 100,
+          y: 100,
+          angle: 0,
+          width: 45,
+          type: 'door',
+          hinge: 'end',
+          swing: 1,
+        },
+        {
+          id: 'door-sliding',
+          x: 200,
+          y: 100,
+          angle: 0,
+          width: 80,
+          type: 'door',
+          hinge: 'none',
+          swing: -1,
+        },
+      ],
+    },
+  });
+
+  const [hinged, sliding] = config.floorplan.openings;
+
+  assert.equal(hinged.hinge, 'end');
+  assert.equal(hinged.swing, 1);
+
+  assert.equal(sliding.hinge, 'none');
+  assert.equal(sliding.swing, -1);
+});
+
+test('nur Türen bekommen Scharnier- und Schwenkfelder', () => {
+  const config = normalizeConfig({
+    floorplan: {
+      openings: [
+        {
+          id: 'passage',
+          x: 100,
+          y: 100,
+          angle: 0,
+          width: 90,
+          type: 'passage',
+        },
+        {
+          id: 'window',
+          x: 200,
+          y: 100,
+          angle: 0,
+          width: 90,
+          type: 'window',
+        },
+      ],
+    },
+  });
+
+  const [passage, window] = config.floorplan.openings;
+
+  assert.equal('hinge' in passage, false);
+  assert.equal('swing' in passage, false);
+  assert.equal('hinge' in window, false);
+  assert.equal('swing' in window, false);
 });

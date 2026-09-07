@@ -7,8 +7,9 @@ Temperaturbild über deinen Grundriss rechnet — und dabei Wände, Türen und
 Fenster als Wärmewiderstand behandelt.
 
 Ein Sensor hinter einer Wand ist zwar räumlich nah, thermisch aber weit weg.
-Genau das bildet die Karte ab: durch eine offene Tür „fließt" die Wärme,
-durch eine Außenwand praktisch gar nicht.
+Genau das bildet die Karte ab: durch einen offenen Durchgang „fließt" die
+Wärme frei, eine geschlossene Tür dämpft sie, und durch eine Außenwand
+praktisch gar nicht.
 
 ---
 
@@ -66,6 +67,10 @@ Weiteres: Mausrad zoomt, mittlere Maustaste oder Leertaste schiebt,
 - Türen sind eigenständige Objekte und nicht an eine bestimmte Wand
   gehängt. Grenzen zwei Räume aneinander, öffnet eine einzelne Tür
   deshalb automatisch beide Raumkanten.
+- Bei ausgewählter Tür lässt sich das Scharnier an eines der beiden Enden
+  setzen und die Öffnungsrichtung umkehren. **Keines / Schiebetür** ist für
+  Schiebe- oder Taschentüren gedacht; dabei entfällt der Schwenkbogen, die
+  Öffnung bleibt thermisch aber eine Tür.
 - Grob gezeichnete Räume musst du nicht per Griff nachziehen: mit
   ausgewähltem Raum stehen rechts **Breite** und **Länge** in Metern als
   Eingabefelder. Der Raum wird auf das eingetippte Maß gestreckt, die
@@ -179,7 +184,7 @@ floorplan:
       points: [[0, 0], [350, 0], [350, 300], [0, 300]]
   walls: []             # nur freistehende Wände
   openings:
-    - { id: o1, x: 150, y: 300, angle: 0, width: 50, type: door }
+    - { id: o1, x: 150, y: 300, angle: 0, width: 50, type: door, hinge: start, swing: -1 }
   sensors:
     - { id: s1, x: 175, y: 150, entity: sensor.wohnzimmer_temperatur, name: Wohnzimmer }
 ```
@@ -191,6 +196,13 @@ sonst wirken die Wände zu stark oder zu schwach.
 
 `angle` einer Öffnung ist im Bogenmaß: `0` = waagrecht, `1.5708` = senkrecht.
 Im Editor wird das automatisch gesetzt.
+
+Bei Türen kann `hinge` `start`, `end` oder `none` sein. `start` und `end`
+wählen das Scharnierende der Öffnung; `none` steht für eine Schiebe- oder
+Taschentür und zeichnet keinen Schwenkbogen. `swing` ist `-1` oder `1` und
+bestimmt, zu welcher Seite eine angeschlagene Tür öffnet. Diese Einstellungen
+ändern nur die Darstellung — das thermische Verhalten wird weiterhin durch
+`type: door` bestimmt.
 
 ## Nicht nur Temperatur
 

@@ -61,6 +61,7 @@ export const DEFAULT_TRANSMITTANCE = {
 };
 
 export const OPENING_TYPES = ['passage', 'door', 'window'];
+export const DOOR_HINGES = ['start', 'end', 'none'];
 export const WALL_TYPES = ['interior', 'exterior'];
 
 let uidCounter = 0;
@@ -95,14 +96,25 @@ export function normalizeConfig(raw) {
     type: WALL_TYPES.includes(w.type) ? w.type : 'interior',
   }));
 
-  fp.openings = (fp.openings || []).map((o) => ({
-    id: o.id || uid('o'),
-    x: Number(o.x) || 0,
-    y: Number(o.y) || 0,
-    angle: Number(o.angle) || 0,
-    width: Math.max(4, Number(o.width) || 45),
-    type: OPENING_TYPES.includes(o.type) ? o.type : 'door',
-  }));
+  fp.openings = (fp.openings || []).map((o) => {
+    const type = OPENING_TYPES.includes(o.type) ? o.type : 'door';
+
+    const opening = {
+      id: o.id || uid('o'),
+      x: Number(o.x) || 0,
+      y: Number(o.y) || 0,
+      angle: Number(o.angle) || 0,
+      width: Math.max(4, Number(o.width) || 45),
+      type,
+    };
+
+    if (type === 'door') {
+      opening.hinge = DOOR_HINGES.includes(o.hinge) ? o.hinge : 'start';
+      opening.swing = Number(o.swing) === 1 ? 1 : -1;
+    }
+
+    return opening;
+  });
 
   fp.sensors = (fp.sensors || []).map((s) => ({
     id: s.id || uid('s'),

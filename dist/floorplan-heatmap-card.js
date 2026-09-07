@@ -151,6 +151,13 @@ const TRANSLATIONS = {
       'Room edges are automatically detected as exterior or interior walls; this type only applies to freestanding walls.',
     'planEditor.kind': 'Kind',
     'planEditor.openingWidthLabel': 'Width —',
+    'planEditor.hinge': 'Hinge',
+    'planEditor.hingeStart': 'End A',
+    'planEditor.hingeEnd': 'End B',
+    'planEditor.hingeNone': 'None / sliding',
+    'planEditor.swing': 'Swing direction',
+    'planEditor.doorOrientationNote':
+      'Choose the hinge end and swing direction. None / sliding draws the closed door without a swing arc.',
     'planEditor.openingNote':
       'Passage = open, door = clearly damped, window = almost sealed. The opening affects every wall at this spot — so both rooms, if two adjoin here.',
     'planEditor.displayNameLabel': 'Display name (empty = entity name)',
@@ -301,6 +308,13 @@ const TRANSLATIONS = {
       'Raumkanten werden automatisch als Außen- oder Innenwand erkannt; dieser Typ gilt nur für freistehende Wände.',
     'planEditor.kind': 'Art',
     'planEditor.openingWidthLabel': 'Breite —',
+    'planEditor.hinge': 'Scharnier',
+    'planEditor.hingeStart': 'Ende A',
+    'planEditor.hingeEnd': 'Ende B',
+    'planEditor.hingeNone': 'Keines / Schiebetür',
+    'planEditor.swing': 'Öffnungsrichtung',
+    'planEditor.doorOrientationNote':
+      'Scharnierende und Öffnungsrichtung wählen. Keines / Schiebetür zeichnet die geschlossene Tür ohne Schwenkbogen.',
     'planEditor.openingNote':
       'Durchgang = offen, Tür = deutlich gedämpft, Fenster = fast dicht. Die Öffnung wirkt auf jede Wand an dieser Stelle — bei zwei aneinandergrenzenden Räumen also auf beide.',
     'planEditor.displayNameLabel': 'Anzeigename (leer = Entity-Name)',
@@ -654,6 +668,7 @@ const DEFAULT_TRANSMITTANCE = {
 };
 
 const OPENING_TYPES = ['passage', 'door', 'window'];
+const DOOR_HINGES = ['start', 'end', 'none'];
 const WALL_TYPES = ['interior', 'exterior'];
 
 let uidCounter = 0;
@@ -688,14 +703,25 @@ function normalizeConfig(raw) {
     type: WALL_TYPES.includes(w.type) ? w.type : 'interior',
   }));
 
-  fp.openings = (fp.openings || []).map((o) => ({
-    id: o.id || uid('o'),
-    x: Number(o.x) || 0,
-    y: Number(o.y) || 0,
-    angle: Number(o.angle) || 0,
-    width: Math.max(4, Number(o.width) || 45),
-    type: OPENING_TYPES.includes(o.type) ? o.type : 'door',
-  }));
+  fp.openings = (fp.openings || []).map((o) => {
+    const type = OPENING_TYPES.includes(o.type) ? o.type : 'door';
+
+    const opening = {
+      id: o.id || uid('o'),
+      x: Number(o.x) || 0,
+      y: Number(o.y) || 0,
+      angle: Number(o.angle) || 0,
+      width: Math.max(4, Number(o.width) || 45),
+      type,
+    };
+
+    if (type === 'door') {
+      opening.hinge = DOOR_HINGES.includes(o.hinge) ? o.hinge : 'start';
+      opening.swing = Number(o.swing) === 1 ? 1 : -1;
+    }
+
+    return opening;
+  });
 
   fp.sensors = (fp.sensors || []).map((s) => ({
     id: s.id || uid('s'),
@@ -1510,6 +1536,60 @@ function wallGaps(wall, openings, tol = 8) {
   return gaps;
 }
 
+function doorGeometry(o) {
+  const angle = Number(o.angle) || 0;
+  const width = Math.max(0, Number(o.width) || 0);
+
+  const halfX = (Math.cos(angle) * width) / 2;
+  const halfY = (Math.sin(angle) * width) / 2;
+
+  const start = {
+    x: o.x - halfX,
+    y: o.y - halfY,
+  };
+
+  const end = {
+    x: o.x + halfX,
+    y: o.y + halfY,
+  };
+
+  const hingeMode =
+    o.hinge === 'end' || o.hinge === 'none'
+      ? o.hinge
+      : 'start';
+
+  const swing = Number(o.swing) === 1 ? 1 : -1;
+
+  const hinge = hingeMode === 'end' ? end : start;
+  const closed = hingeMode === 'end' ? start : end;
+
+  const closedAngle = Math.atan2(
+    closed.y - hinge.y,
+    closed.x - hinge.x
+  );
+
+  const openAngle = closedAngle + swing * Math.PI / 2;
+
+  const open = {
+    x: hinge.x + Math.cos(openAngle) * width,
+    y: hinge.y + Math.sin(openAngle) * width,
+  };
+
+  return {
+    start,
+    end,
+    hinge,
+    closed,
+    open,
+    width,
+    hingeMode,
+    swing,
+    closedAngle,
+    openAngle,
+    hasHinge: hingeMode !== 'none',
+  };
+}
+
 function renderFloorplan(ctx, fp, view, opts) {
   const walls = opts.walls || buildWalls(fp);
   const wallColor = opts.wallColor || '#2c3440';
@@ -1546,13 +1626,35 @@ function renderFloorplan(ctx, fp, view, opts) {
       ctx.lineTo(bx, by);
       ctx.stroke();
     } else if (o.type === 'door') {
+      const door = doorGeometry(o);
+
+      const hingeX = view.toX(door.hinge.x);
+      const hingeY = view.toY(door.hinge.y);
+      const closedX = view.toX(door.closed.x);
+      const closedY = view.toY(door.closed.y);
+
       ctx.lineWidth = Math.max(1, 1.5 * view.scale);
       ctx.strokeStyle = opts.doorColor || 'rgba(140,150,165,0.9)';
       ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      const radius = Math.hypot(bx - ax, by - ay);
-      const start = Math.atan2(by - ay, bx - ax);
-      ctx.arc(ax, ay, radius, start, start - Math.PI / 2, true);
+
+      if (!door.hasHinge) {
+        // Sliding / pocket door: closed leaf only, no swing arc.
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      } else {
+        // Hinged door: closed leaf plus quarter-circle swing arc.
+        ctx.moveTo(hingeX, hingeY);
+        ctx.lineTo(closedX, closedY);
+        ctx.arc(
+          hingeX,
+          hingeY,
+          door.width * view.scale,
+          door.closedAngle,
+          door.openAngle,
+          door.swing < 0
+        );
+      }
+
       ctx.stroke();
     }
   }
@@ -2005,6 +2107,11 @@ function renderScene(ctx, params) {
 
 
 const OPENING_LABEL_KEYS = { passage: 'label.passage', door: 'label.door', window: 'label.window' };
+const DOOR_HINGE_LABEL_KEYS = {
+  start: 'planEditor.hingeStart',
+  end: 'planEditor.hingeEnd',
+  none: 'planEditor.hingeNone',
+};
 const WALL_LABEL_KEYS = { interior: 'label.interior', exterior: 'label.exterior' };
 
 const ICONS = {
@@ -2826,6 +2933,8 @@ class PlanEditor {
       angle: hit.angle,
       width: this.pxPerMeter * 0.9,
       type: 'door',
+      hinge: 'start',
+      swing: -1,
     };
     this.state.openings.push(opening);
     this.selection = { kind: 'opening', id: opening.id };
@@ -3100,12 +3209,22 @@ class PlanEditor {
         out.push(`<line x1="${o.x - hx}" y1="${o.y - hy}" x2="${o.x + hx}" y2="${o.y + hy}"
           stroke="${color}" stroke-width="3" vector-effect="non-scaling-stroke" style="pointer-events:none"/>`);
       } else if (o.type === 'door') {
-        const r = o.width;
-        const sweepX = o.x - hx + Math.cos(o.angle - Math.PI / 2) * r;
-        const sweepY = o.y - hy + Math.sin(o.angle - Math.PI / 2) * r;
-        out.push(`<path d="M ${o.x - hx} ${o.y - hy} L ${o.x + hx} ${o.y + hy} M ${o.x + hx} ${o.y + hy} A ${r} ${r} 0 0 0 ${sweepX} ${sweepY}"
-          fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"
-          stroke-dasharray="${selected ? '' : ''}" style="pointer-events:none"/>`);
+        const door = doorGeometry(o);
+
+        if (!door.hasHinge) {
+          out.push(`<line x1="${door.start.x}" y1="${door.start.y}" x2="${door.end.x}" y2="${door.end.y}"
+            stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"
+            style="pointer-events:none"/>`);
+        } else {
+          const sweepFlag = door.swing > 0 ? 1 : 0;
+
+          out.push(`<path d="M ${door.hinge.x} ${door.hinge.y}
+            L ${door.closed.x} ${door.closed.y}
+            M ${door.closed.x} ${door.closed.y}
+            A ${door.width} ${door.width} 0 0 ${sweepFlag} ${door.open.x} ${door.open.y}"
+            fill="none" stroke="${color}" stroke-width="1.5"
+            vector-effect="non-scaling-stroke" style="pointer-events:none"/>`);
+        }
       } else {
         out.push(`<line x1="${o.x - hx}" y1="${o.y - hy}" x2="${o.x + hx}" y2="${o.y + hy}"
           stroke="${color}" stroke-width="2" stroke-dasharray="4 4" vector-effect="non-scaling-stroke" style="pointer-events:none"/>`);
@@ -3469,24 +3588,95 @@ class PlanEditor {
     const lang = this.lang;
     const o = this.state.openings.find((x) => x.id === id);
     if (!o) return this._panelGeneral();
+
+    const doorControls = o.type === 'door' ? `
+      <div class="field">
+        <label>${t(lang, 'planEditor.hinge')}</label>
+        <div class="seg">
+          ${DOOR_HINGES.map((hinge) => `
+            <button
+              data-hinge="${hinge}"
+              class="${o.hinge === hinge ? 'active' : ''}">
+              ${t(lang, DOOR_HINGE_LABEL_KEYS[hinge])}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      ${o.hinge !== 'none' ? `
+        <div class="field">
+          <label>${t(lang, 'planEditor.swing')}</label>
+          <div class="seg">
+            <button data-swing="-1" class="${o.swing === -1 ? 'active' : ''}">↶</button>
+            <button data-swing="1" class="${o.swing === 1 ? 'active' : ''}">↷</button>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="empty-note">
+        ${t(lang, 'planEditor.doorOrientationNote')}
+      </div>
+    ` : '';
+
     const panel = this._panel(t(lang, 'planEditor.panelOpening'), `
       <div class="field"><label>${t(lang, 'planEditor.kind')}</label>
         <div class="seg">${OPENING_TYPES.map((type) => `<button data-type="${type}" class="${o.type === type ? 'active' : ''}">${t(lang, OPENING_LABEL_KEYS[type])}</button>`).join('')}</div>
       </div>
+
       <div class="field">
         <label>${t(lang, 'planEditor.openingWidthLabel')} <span data-out="w">${(o.width / this.pxPerMeter).toFixed(2)} m</span></label>
-        <input type="range" data-f="width" min="${this.pxPerMeter * 0.3}" max="${this.pxPerMeter * 4}" step="1" value="${o.width}">
+        <input type="range" data-f="width"
+          min="${this.pxPerMeter * 0.3}"
+          max="${this.pxPerMeter * 4}"
+          step="1"
+          value="${o.width}">
       </div>
+
+      ${doorControls}
+
       <div class="empty-note">${t(lang, 'planEditor.openingNote')}</div>
     `);
+
     panel.querySelectorAll('[data-type]').forEach((btn) => {
-      btn.onclick = () => { this.snapshot(); o.type = btn.dataset.type; this.render(); this.renderSide(); };
+      btn.onclick = () => {
+        this.snapshot();
+        o.type = btn.dataset.type;
+
+        if (o.type === 'door') {
+          if (!DOOR_HINGES.includes(o.hinge)) o.hinge = 'start';
+          if (o.swing !== -1 && o.swing !== 1) o.swing = -1;
+        }
+
+        this.render();
+        this.renderSide();
+      };
     });
+
+    panel.querySelectorAll('[data-hinge]').forEach((btn) => {
+      btn.onclick = () => {
+        this.snapshot();
+        o.hinge = btn.dataset.hinge;
+        this.render();
+        this.renderSide();
+      };
+    });
+
+    panel.querySelectorAll('[data-swing]').forEach((btn) => {
+      btn.onclick = () => {
+        this.snapshot();
+        o.swing = Number(btn.dataset.swing);
+        this.render();
+        this.renderSide();
+      };
+    });
+
     panel.querySelector('[data-f="width"]').oninput = (e) => {
       o.width = parseFloat(e.target.value);
-      panel.querySelector('[data-out="w"]').textContent = `${(o.width / this.pxPerMeter).toFixed(2)} m`;
+      panel.querySelector('[data-out="w"]').textContent =
+        `${(o.width / this.pxPerMeter).toFixed(2)} m`;
       this.render();
     };
+
     return this._withDelete(panel, 'opening', id);
   }
 

@@ -165,6 +165,60 @@ export function wallGaps(wall, openings, tol = 8) {
   return gaps;
 }
 
+export function doorGeometry(o) {
+  const angle = Number(o.angle) || 0;
+  const width = Math.max(0, Number(o.width) || 0);
+
+  const halfX = (Math.cos(angle) * width) / 2;
+  const halfY = (Math.sin(angle) * width) / 2;
+
+  const start = {
+    x: o.x - halfX,
+    y: o.y - halfY,
+  };
+
+  const end = {
+    x: o.x + halfX,
+    y: o.y + halfY,
+  };
+
+  const hingeMode =
+    o.hinge === 'end' || o.hinge === 'none'
+      ? o.hinge
+      : 'start';
+
+  const swing = Number(o.swing) === 1 ? 1 : -1;
+
+  const hinge = hingeMode === 'end' ? end : start;
+  const closed = hingeMode === 'end' ? start : end;
+
+  const closedAngle = Math.atan2(
+    closed.y - hinge.y,
+    closed.x - hinge.x
+  );
+
+  const openAngle = closedAngle + swing * Math.PI / 2;
+
+  const open = {
+    x: hinge.x + Math.cos(openAngle) * width,
+    y: hinge.y + Math.sin(openAngle) * width,
+  };
+
+  return {
+    start,
+    end,
+    hinge,
+    closed,
+    open,
+    width,
+    hingeMode,
+    swing,
+    closedAngle,
+    openAngle,
+    hasHinge: hingeMode !== 'none',
+  };
+}
+
 export function renderFloorplan(ctx, fp, view, opts) {
   const walls = opts.walls || buildWalls(fp);
   const wallColor = opts.wallColor || '#2c3440';
@@ -201,13 +255,35 @@ export function renderFloorplan(ctx, fp, view, opts) {
       ctx.lineTo(bx, by);
       ctx.stroke();
     } else if (o.type === 'door') {
+      const door = doorGeometry(o);
+
+      const hingeX = view.toX(door.hinge.x);
+      const hingeY = view.toY(door.hinge.y);
+      const closedX = view.toX(door.closed.x);
+      const closedY = view.toY(door.closed.y);
+
       ctx.lineWidth = Math.max(1, 1.5 * view.scale);
       ctx.strokeStyle = opts.doorColor || 'rgba(140,150,165,0.9)';
       ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      const radius = Math.hypot(bx - ax, by - ay);
-      const start = Math.atan2(by - ay, bx - ax);
-      ctx.arc(ax, ay, radius, start, start - Math.PI / 2, true);
+
+      if (!door.hasHinge) {
+        // Sliding / pocket door: closed leaf only, no swing arc.
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      } else {
+        // Hinged door: closed leaf plus quarter-circle swing arc.
+        ctx.moveTo(hingeX, hingeY);
+        ctx.lineTo(closedX, closedY);
+        ctx.arc(
+          hingeX,
+          hingeY,
+          door.width * view.scale,
+          door.closedAngle,
+          door.openAngle,
+          door.swing < 0
+        );
+      }
+
       ctx.stroke();
     }
   }

@@ -140,6 +140,13 @@ const TRANSLATIONS = {
       'Room edges are automatically detected as exterior or interior walls; this type only applies to freestanding walls.',
     'planEditor.kind': 'Kind',
     'planEditor.openingWidthLabel': 'Width —',
+    'planEditor.hinge': 'Hinge',
+    'planEditor.hingeStart': 'End A',
+    'planEditor.hingeEnd': 'End B',
+    'planEditor.hingeNone': 'None / sliding',
+    'planEditor.swing': 'Swing direction',
+    'planEditor.doorOrientationNote':
+      'Choose the hinge end and swing direction. None / sliding draws the closed door without a swing arc.',
     'planEditor.openingNote':
       'Passage = open, door = clearly damped, window = almost sealed. The opening affects every wall at this spot — so both rooms, if two adjoin here.',
     'planEditor.displayNameLabel': 'Display name (empty = entity name)',
@@ -290,6 +297,13 @@ const TRANSLATIONS = {
       'Raumkanten werden automatisch als Außen- oder Innenwand erkannt; dieser Typ gilt nur für freistehende Wände.',
     'planEditor.kind': 'Art',
     'planEditor.openingWidthLabel': 'Breite —',
+    'planEditor.hinge': 'Scharnier',
+    'planEditor.hingeStart': 'Ende A',
+    'planEditor.hingeEnd': 'Ende B',
+    'planEditor.hingeNone': 'Keines / Schiebetür',
+    'planEditor.swing': 'Öffnungsrichtung',
+    'planEditor.doorOrientationNote':
+      'Scharnierende und Öffnungsrichtung wählen. Keines / Schiebetür zeichnet die geschlossene Tür ohne Schwenkbogen.',
     'planEditor.openingNote':
       'Durchgang = offen, Tür = deutlich gedämpft, Fenster = fast dicht. Die Öffnung wirkt auf jede Wand an dieser Stelle — bei zwei aneinandergrenzenden Räumen also auf beide.',
     'planEditor.displayNameLabel': 'Anzeigename (leer = Entity-Name)',

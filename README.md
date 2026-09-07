@@ -7,8 +7,8 @@ heatmap over your floor plan — treating walls, doors, and windows as
 thermal resistance.
 
 A sensor behind a wall may be spatially close, but thermally it's far away.
-That's exactly what the card shows: heat "flows" through an open door, but
-barely at all through an exterior wall.
+That's exactly what the card shows: heat "flows" freely through an open
+passage, is damped by a closed door, and barely passes through an exterior wall.
 
 ---
 
@@ -66,6 +66,9 @@ More: mouse wheel zooms, middle mouse button or spacebar pans,
 - Doors are standalone objects, not attached to a specific wall. If two
   rooms share an edge, a single door automatically opens both room edges
   at once.
+- With a door selected, its hinge can be placed at either end and its swing
+  direction can be reversed. Choose **None / sliding** for sliding or pocket
+  doors; this removes the swing arc while keeping the opening thermally a door.
 - You don't have to drag handles to fix a roughly drawn room: with a room
   selected, **Width** and **Length** input fields (in meters) appear on
   the right. The room is stretched to the typed dimension, keeping its
@@ -180,7 +183,7 @@ floorplan:
       points: [[0, 0], [350, 0], [350, 300], [0, 300]]
   walls: []             # only freestanding walls
   openings:
-    - { id: o1, x: 150, y: 300, angle: 0, width: 50, type: door }
+    - { id: o1, x: 150, y: 300, angle: 0, width: 50, type: door, hinge: start, swing: -1 }
   sensors:
     - { id: s1, x: 175, y: 150, entity: sensor.living_room_temperature, name: Living Room }
 ```
@@ -192,6 +195,12 @@ walls will look too strong or too weak.
 
 An opening's `angle` is in radians: `0` = horizontal, `1.5708` = vertical.
 The editor sets this automatically.
+
+For doors, `hinge` can be `start`, `end`, or `none`. `start` and `end`
+select the hinged end of the opening; `none` represents a sliding or pocket
+door and draws no swing arc. `swing` is `-1` or `1` and selects which side
+a hinged door swings toward. These settings affect only the drawing — thermal
+behaviour is still determined by `type: door`.
 
 ## Not just temperature
 
