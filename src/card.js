@@ -19,6 +19,7 @@ import { renderScene } from './scene3d.js';
 import { paletteGradientCss, paletteColorCss, readableTextOn, paletteLUT } from './palette.js';
 import { clamp } from './geometry.js';
 import { t, detectLanguage, detectLanguageFallback } from './i18n.js';
+import { uniqueHistoryEntityIds, normalizeHistory, sensorValuesAt, fetchHistory } from './history.js';
 
 const CARD_STYLES = `
   :host { display: block; }
@@ -145,6 +146,48 @@ const CARD_STYLES = `
     opacity: 0.65;
     transform: translateX(-1px);
   }
+  .timeline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px 14px;
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    font-variant-numeric: tabular-nums;
+  }
+  .timeline[hidden] {
+    display: none !important;
+  }
+  .timeline .time {
+    min-width: 82px;
+    color: var(--primary-text-color);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .timeline input[type=range] {
+    flex: 1;
+    min-width: 80px;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+  .timeline input[type=range]:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .timeline .live {
+    border: 1px solid var(--divider-color, rgba(127,140,158,.35));
+    border-radius: 999px;
+    padding: 4px 9px;
+    background: transparent;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .timeline .live:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
   .empty {
     display: flex;
     flex-direction: column;
@@ -188,6 +231,16 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._lastValues = null;
     this._isotherms = [];
     this._rafHandle = 0;
+
+    this._history = null;
+    this._historyLoading = false;
+    this._historyError = '';
+    this._historyStart = 0;
+    this._historyEnd = 0;
+    this._historyStepMs = 0;
+    this._historyFrames = 0;
+    this._selectedHistoryTime = null;
+    this._historyRequestToken = 0;
   }
 
   setConfig(config) {
@@ -197,6 +250,17 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._fieldSignature = '';
     this._lastValues = null;
     this._buffer = null;
+	// Eine geänderte Konfiguration kann andere Sensoren oder einen anderen
+    // Zeitraum verwenden. Laufende History-Anfragen werden dadurch ungültig.
+    this._historyRequestToken += 1;
+    this._history = null;
+    this._historyLoading = false;
+    this._historyError = '';
+    this._historyStart = 0;
+    this._historyEnd = 0;
+    this._historyStepMs = 0;
+    this._historyFrames = 0;
+    this._selectedHistoryTime = null;
     // Der Blickwinkel aus der Konfiguration ist der Ausgangspunkt.
     // Dreht der Betrachter danach am Modell, bleibt das eine reine
     // Ansichtssache und wird bewusst nicht in die Config zurückgeschrieben.
@@ -210,6 +274,10 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._hass = hass;
     this._applyStaticText();
     this._update(false);
+
+    if (this._config && this._config.show_timeline) {
+      this._ensureHistory();
+    }
   }
 
   /** Sprache aus hass.language — vor dem ersten hass-Update Browser-Fallback. */
@@ -257,6 +325,11 @@ export class FloorplanHeatmapCard extends HTMLElement {
           <div class="bar"></div>
           <span class="hi"></span>
         </div>
+        <div class="timeline" hidden>
+          <span class="time">LIVE</span>
+          <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
+          <button class="live" type="button">LIVE</button>
+        </div>
         <div class="empty" hidden>
           <div class="big">🏠</div>
           <div class="empty-text"></div>
@@ -272,6 +345,10 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._chips = this.shadowRoot.querySelector('.chips');
     this._tooltip = this.shadowRoot.querySelector('.tooltip');
     this._legend = this.shadowRoot.querySelector('.legend');
+    this._timeline = this.shadowRoot.querySelector('.timeline');
+    this._timelineTime = this.shadowRoot.querySelector('.timeline .time');
+    this._timelineSlider = this.shadowRoot.querySelector('.timeline-slider');
+    this._timelineLive = this.shadowRoot.querySelector('.timeline .live');
     this._empty = this.shadowRoot.querySelector('.empty');
     this._emptyText = this.shadowRoot.querySelector('.empty-text');
     this._resetBtn = this.shadowRoot.querySelector('.reset');
@@ -280,6 +357,15 @@ export class FloorplanHeatmapCard extends HTMLElement {
     header.hidden = !cfg.title;
     this._titleEl.textContent = cfg.title || '';
     this._legend.hidden = !cfg.show_legend;
+	this._timeline.hidden = !cfg.show_timeline;
+
+    this._timelineSlider.addEventListener('input', (event) => {
+      this._onTimelineInput(event);
+    });
+
+    this._timelineLive.addEventListener('click', () => {
+      this._setLive();
+    });
 
     this._stage.classList.toggle('tilted', cfg.view_mode === 'tilted');
     this._stage.addEventListener('pointermove', (e) => this._onPointerMove(e));
@@ -308,6 +394,11 @@ export class FloorplanHeatmapCard extends HTMLElement {
     }
 
     this._applyStaticText();
+    this._updateTimelineUi();
+
+    if (cfg.show_timeline && this._hass) {
+      this._ensureHistory();
+    }
   }
 
   /** Zieht die sprachabhängigen, statisch aufgebauten Texte nach — auch
@@ -322,10 +413,20 @@ export class FloorplanHeatmapCard extends HTMLElement {
       `${t(lang, 'card.emptyLine2', { button: `<b>${t(lang, 'planEditor.title')}</b>` })}`;
   }
 
-  /** Aktuelle Messwerte in der Reihenfolge von floorplan.sensors. */
+  /** Messwerte in Sensor-Reihenfolge — live oder vom gewählten Zeitpunkt. */
   _readValues() {
     const sensors = this._config.floorplan.sensors;
+
+    if (this._selectedHistoryTime != null && this._history) {
+      return sensorValuesAt(
+        this._history,
+        sensors,
+        this._selectedHistoryTime
+      );
+    }
+
     const hass = this._hass;
+
     return sensors.map((s) => {
       if (!hass || !s.entity) return NaN;
       const state = hass.states[s.entity];
@@ -355,6 +456,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._empty.hidden = !empty;
     this._stage.hidden = empty;
     this._legend.hidden = empty || !cfg.show_legend;
+    this._timeline.hidden = empty || !cfg.show_timeline;
     this._summaryEl.hidden = empty;
     if (empty) return;
 
@@ -391,6 +493,182 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._scheduleRender();
   }
 
+  async _ensureHistory() {
+    const cfg = this._config;
+
+    if (
+      !cfg ||
+      !cfg.show_timeline ||
+      !this._hass ||
+      this._history ||
+      this._historyLoading ||
+      this._historyError
+    ) {
+      return;
+    }
+
+    const entityIds = uniqueHistoryEntityIds(cfg.floorplan.sensors);
+
+    if (!entityIds.length) {
+      this._historyError = 'No sensor entities configured';
+      this._updateTimelineUi();
+      return;
+    }
+
+    const stepMs = cfg.history_step_minutes * 60 * 1000;
+    const frames = Math.max(
+      1,
+      Math.ceil((cfg.history_hours * 60) / cfg.history_step_minutes)
+    );
+
+    const endMs = Date.now();
+    const startMs = endMs - frames * stepMs;
+
+    this._historyStepMs = stepMs;
+    this._historyFrames = frames;
+    this._historyStart = startMs;
+    this._historyEnd = endMs;
+    this._historyLoading = true;
+    this._historyError = '';
+
+    const token = ++this._historyRequestToken;
+
+    this._updateTimelineUi();
+
+    try {
+      const raw = await fetchHistory(
+        this._hass,
+        new Date(startMs),
+        new Date(endMs),
+        entityIds
+      );
+
+      if (token !== this._historyRequestToken) return;
+
+      this._history = normalizeHistory(raw);
+    } catch (error) {
+      if (token !== this._historyRequestToken) return;
+
+      this._historyError =
+        error && error.message
+          ? error.message
+          : String(error || 'History unavailable');
+    } finally {
+      if (token !== this._historyRequestToken) return;
+
+      this._historyLoading = false;
+      this._updateTimelineUi();
+    }
+  }
+
+  _onTimelineInput(event) {
+    if (!this._history || !this._historyFrames) return;
+
+    const index = Math.max(
+      0,
+      Math.min(
+        this._historyFrames,
+        Math.round(Number(event.target.value) || 0)
+      )
+    );
+
+    // Ganz rechts entspricht immer dem echten Live-Modus.
+    if (index >= this._historyFrames) {
+      this._setLive();
+      return;
+    }
+
+    this._selectedHistoryTime =
+      this._historyStart + index * this._historyStepMs;
+
+    this._updateTimelineUi();
+    this._update(true);
+  }
+
+  _setLive() {
+    this._selectedHistoryTime = null;
+    this._updateTimelineUi();
+    this._update(true);
+  }
+
+  _formatTimelineTime(time) {
+    const language =
+      this._hass && this._hass.language
+        ? this._hass.language
+        : undefined;
+
+    return new Intl.DateTimeFormat(language, {
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(time));
+  }
+
+  _updateTimelineUi() {
+    if (!this._timeline || !this._config) return;
+
+    const visible =
+      this._config.show_timeline &&
+      this._stage &&
+      !this._stage.hidden;
+
+    this._timeline.hidden = !visible;
+
+    if (!visible) return;
+
+    this._timeline.title = this._historyError || '';
+
+    if (this._historyLoading) {
+      this._timelineTime.textContent = 'Loading history…';
+      this._timelineSlider.disabled = true;
+      this._timelineLive.disabled = true;
+      return;
+    }
+
+    if (this._historyError) {
+      this._timelineTime.textContent = 'History unavailable';
+      this._timelineSlider.disabled = true;
+      this._timelineLive.disabled = true;
+      return;
+    }
+
+    if (!this._history || !this._historyFrames) {
+      this._timelineTime.textContent = 'LIVE';
+      this._timelineSlider.disabled = true;
+      this._timelineLive.disabled = true;
+      return;
+    }
+
+    this._timelineSlider.disabled = false;
+    this._timelineSlider.min = '0';
+    this._timelineSlider.max = String(this._historyFrames);
+    this._timelineSlider.step = '1';
+
+    const live = this._selectedHistoryTime == null;
+
+    if (live) {
+      this._timelineSlider.value = String(this._historyFrames);
+      this._timelineTime.textContent = 'LIVE';
+    } else {
+      const index = Math.max(
+        0,
+        Math.min(
+          this._historyFrames - 1,
+          Math.round(
+            (this._selectedHistoryTime - this._historyStart) /
+              this._historyStepMs
+          )
+        )
+      );
+
+      this._timelineSlider.value = String(index);
+      this._timelineTime.textContent =
+        this._formatTimelineTime(this._selectedHistoryTime);
+    }
+
+    this._timelineLive.disabled = live;
+  }
+  
   _computeRange() {
     const cfg = this._config;
     if (!cfg.auto_range || !this._field || !this._field.stats) {

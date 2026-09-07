@@ -151,3 +151,31 @@ test('nur Türen bekommen Scharnier- und Schwenkfelder', () => {
   assert.equal('hinge' in window, false);
   assert.equal('swing' in window, false);
 });
+
+test('timeline settings have backwards-compatible defaults', () => {
+  const config = normalizeConfig({});
+
+  assert.equal(config.show_timeline, false);
+  assert.equal(config.history_hours, 24);
+  assert.equal(config.history_step_minutes, 15);
+});
+
+test('timeline settings are normalized to safe limits', () => {
+  const config = normalizeConfig({
+    show_timeline: true,
+    history_hours: 999,
+    history_step_minutes: 0,
+  });
+
+  assert.equal(config.show_timeline, true);
+  assert.equal(config.history_hours, 168);
+  assert.equal(config.history_step_minutes, 15);
+
+  const minimums = normalizeConfig({
+    history_hours: -5,
+    history_step_minutes: -10,
+  });
+
+  assert.equal(minimums.history_hours, 1);
+  assert.equal(minimums.history_step_minutes, 1);
+});
