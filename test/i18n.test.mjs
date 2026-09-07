@@ -19,6 +19,12 @@ const TIMELINE_KEYS = [
   'timeline.noSensors',
   'timeline.sunrise',
   'timeline.sunset',
+  'editor.sectionTimeline',
+  'editor.showTimeline',
+  'editor.historyHours',
+  'editor.historyStepMinutes',
+  'editor.timelineNote',
+  'editor.historyStepNote',
 ];
 
 test('timeline strings exist in English and German', () => {

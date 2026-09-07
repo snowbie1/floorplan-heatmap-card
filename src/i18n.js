@@ -44,6 +44,14 @@ const TRANSLATIONS = {
     'editor.sectionDisplay': 'Display',
     'editor.sectionView': 'View',
     'editor.sectionShow': 'Show',
+    'editor.sectionTimeline': 'History & Timeline',
+    'editor.showTimeline': 'Show history timeline',
+    'editor.historyHours': 'Default history range (hours)',
+    'editor.historyStepMinutes': 'History step (minutes)',
+    'editor.timelineNote':
+      'The card opens with this rolling history range. The Today / 24h / 48h / 7d selector on the card changes only the current view and does not rewrite this configuration.',
+    'editor.historyStepNote':
+      'Smaller steps give smoother playback, but create more historical frames and require more processing.',
     'editor.sectionModel': 'Model & Accuracy',
     'editor.sectionTransmittance': 'Thermal transmittance',
     'editor.fieldTitle': 'Title',
@@ -227,6 +235,14 @@ const TRANSLATIONS = {
     'editor.sectionDisplay': 'Darstellung',
     'editor.sectionView': 'Ansicht',
     'editor.sectionShow': 'Anzeigen',
+    'editor.sectionTimeline': 'Verlauf & Zeitleiste',
+    'editor.showTimeline': 'Verlaufszeitleiste anzeigen',
+    'editor.historyHours': 'Standard-Zeitraum (Stunden)',
+    'editor.historyStepMinutes': 'Zeitschritt (Minuten)',
+    'editor.timelineNote':
+      'Die Karte startet mit diesem rollierenden Verlaufszeitraum. Die Auswahl Heute / 24 Std. / 48 Std. / 7 T. in der Karte ändert nur die aktuelle Ansicht und schreibt diese Konfiguration nicht um.',
+    'editor.historyStepNote':
+      'Kleinere Schritte ergeben eine flüssigere Wiedergabe, erzeugen aber mehr Verlaufsframes und benötigen mehr Rechenleistung.',
     'editor.sectionModel': 'Modell & Genauigkeit',
     'editor.sectionTransmittance': 'Wärmedurchlässigkeit',
     'editor.fieldTitle': 'Titel',
