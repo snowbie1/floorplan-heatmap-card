@@ -5009,15 +5009,66 @@ const CARD_STYLES = `
   .timeline.compact .time {
     min-width: 72px;
   }
-  .timeline input[type=range] {
+  .timeline .timeline-track {
+    position: relative;
     flex: 1;
     min-width: 80px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+  }
+  .timeline input[type=range] {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
     accent-color: var(--primary-color);
     cursor: pointer;
   }
   .timeline input[type=range]:disabled {
     opacity: 0.45;
     cursor: default;
+  }
+  .timeline .sun-markers {
+    position: absolute;
+    z-index: 3;
+    left: 10px;
+    right: 10px;
+    top: 50%;
+    height: 18px;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .timeline .sun-marker {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 2px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--warning-color, #f9a825);
+    opacity: 0.9;
+    transform: translate(-1px, -50%);
+    pointer-events: auto;
+    cursor: help;
+  }
+  .timeline .sun-marker::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border: 2px solid var(--card-background-color, var(--ha-card-background, #111));
+    border-radius: 50%;
+    background: inherit;
+    transform: translateX(-50%);
+  }
+  .timeline .sun-marker.sunrise::after {
+    top: -4px;
+  }
+  .timeline .sun-marker.sunset::after {
+    bottom: -4px;
   }
   .timeline .play,
   .timeline .speed,
@@ -5209,6 +5260,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._playTimer = 0;
     this._playbackSpeed = 1;
     this._historyRangeKey = '24h';
+    this._sunEvents = [];
+    this._sunMarkerSignature = '';
   }
 
   setConfig(config) {
@@ -5236,6 +5289,8 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._historyFrames = 0;
     this._selectedHistoryTime = null;
     this._historyRangeKey = this._initialHistoryRangeKey(this._config);
+    this._sunEvents = [];
+    this._sunMarkerSignature = '';
 
     // Der Blickwinkel aus der Konfiguration ist der Ausgangspunkt.
     // Dreht der Betrachter danach am Modell, bleibt das eine reine
@@ -5323,7 +5378,10 @@ class FloorplanHeatmapCard extends HTMLElement {
             </select>
           </label>
           <span class="time">LIVE</span>
-          <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
+          <div class="timeline-track">
+            <div class="sun-markers"></div>
+            <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
+          </div>
           <button class="live" type="button">LIVE</button>
         </div>
         <div class="empty" hidden>
@@ -5346,6 +5404,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._timelineSpeed = this.shadowRoot.querySelector('.timeline .speed');
     this._timelineRange = this.shadowRoot.querySelector('.timeline .range');
     this._timelineTime = this.shadowRoot.querySelector('.timeline .time');
+    this._timelineSunMarkers = this.shadowRoot.querySelector('.timeline .sun-markers');
     this._timelineSlider = this.shadowRoot.querySelector('.timeline-slider');
     this._timelineLive = this.shadowRoot.querySelector('.timeline .live');
     this._empty = this.shadowRoot.querySelector('.empty');
@@ -5591,12 +5650,114 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._historyStepMs = 0;
     this._historyFrames = 0;
     this._selectedHistoryTime = null;
+    this._sunEvents = [];
+    this._sunMarkerSignature = '';
 
     this._updateTimelineUi();
     this._update(true);
 
     if (this._hass) {
       this._ensureHistory();
+    }
+  }
+
+  _historyStateTime(state) {
+    if (!state) return NaN;
+
+    const raw =
+      state.lu ??
+      state.lc ??
+      state.last_updated ??
+      state.last_changed;
+
+    if (typeof raw === 'number') {
+      return raw > 1e12 ? raw : raw * 1000;
+    }
+
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
+  _extractSunEvents(rawHistory, startMs, endMs) {
+    const states =
+      rawHistory &&
+      Array.isArray(rawHistory['sun.sun'])
+        ? rawHistory['sun.sun']
+        : [];
+
+    const events = [];
+    let previousState = null;
+
+    for (const state of states) {
+      const value =
+        state && typeof state.s === 'string'
+          ? state.s
+          : state && typeof state.state === 'string'
+            ? state.state
+            : null;
+
+      const time = this._historyStateTime(state);
+
+      if (
+        previousState != null &&
+        value !== previousState &&
+        Number.isFinite(time) &&
+        time >= startMs &&
+        time <= endMs
+      ) {
+        if (value === 'above_horizon') {
+          events.push({ type: 'sunrise', time });
+        } else if (value === 'below_horizon') {
+          events.push({ type: 'sunset', time });
+        }
+      }
+
+      if (value != null) {
+        previousState = value;
+      }
+    }
+
+    return events;
+  }
+
+  _renderSunMarkers() {
+    if (!this._timelineSunMarkers) return;
+
+    const span = this._historyEnd - this._historyStart;
+    const signature =
+      `${this._historyStart}:${this._historyEnd}:` +
+      this._sunEvents.map((event) => `${event.type}:${event.time}`).join(',');
+
+    if (signature === this._sunMarkerSignature) return;
+    this._sunMarkerSignature = signature;
+
+    this._timelineSunMarkers.replaceChildren();
+
+    if (!(span > 0) || !this._sunEvents.length) return;
+
+    for (const event of this._sunEvents) {
+      const ratio =
+        (event.time - this._historyStart) / span;
+
+      if (ratio < 0 || ratio > 1) continue;
+
+      const marker = document.createElement('span');
+      marker.className = `sun-marker ${event.type}`;
+      marker.style.left = `${ratio * 100}%`;
+
+      const label =
+        event.type === 'sunrise'
+          ? 'Sunrise'
+          : 'Sunset';
+
+      marker.title =
+        `${label} · ${this._formatTimelineTooltip(event.time)}`;
+      marker.setAttribute(
+        'aria-label',
+        `${label}, ${this._formatTimelineTooltip(event.time)}`
+      );
+
+      this._timelineSunMarkers.appendChild(marker);
     }
   }
 
@@ -5651,6 +5812,15 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._historyError = '';
 
     const token = ++this._historyRequestToken;
+    const historyEntityIds = [...entityIds];
+
+    if (
+      this._hass.states &&
+      this._hass.states['sun.sun'] &&
+      !historyEntityIds.includes('sun.sun')
+    ) {
+      historyEntityIds.push('sun.sun');
+    }
 
     this._updateTimelineUi();
 
@@ -5659,12 +5829,18 @@ class FloorplanHeatmapCard extends HTMLElement {
         this._hass,
         new Date(startMs),
         new Date(endMs),
-        entityIds
+        historyEntityIds
       );
 
       if (token !== this._historyRequestToken) return;
 
       this._history = normalizeHistory(raw);
+      this._sunEvents = this._extractSunEvents(
+        raw,
+        startMs,
+        endMs
+      );
+      this._sunMarkerSignature = '';
     } catch (error) {
       if (token !== this._historyRequestToken) return;
 
@@ -5857,6 +6033,7 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     this._timeline.title = this._historyError || '';
     this._timelineRange.value = this._historyRangeKey;
+    this._renderSunMarkers();
 
     if (this._historyLoading) {
       this._timelineTime.textContent = 'Loading history…';
