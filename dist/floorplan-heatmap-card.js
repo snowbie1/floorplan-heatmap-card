@@ -5012,6 +5012,7 @@ const CARD_STYLES = `
     cursor: default;
   }
   .timeline .play,
+  .timeline .speed,
   .timeline .live {
     border: 1px solid var(--divider-color, rgba(127,140,158,.35));
     border-radius: 999px;
@@ -5030,7 +5031,16 @@ const CARD_STYLES = `
     align-items: center;
     justify-content: center;
   }
+  .timeline .speed {
+    min-width: 38px;
+    height: 26px;
+    padding: 0 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   .timeline .play:disabled,
+  .timeline .speed:disabled,
   .timeline .live:disabled {
     opacity: 0.45;
     cursor: default;
@@ -5089,6 +5099,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._selectedHistoryTime = null;
     this._historyRequestToken = 0;
     this._playTimer = 0;
+    this._playbackSpeed = 1;
   }
 
   setConfig(config) {
@@ -5186,6 +5197,7 @@ class FloorplanHeatmapCard extends HTMLElement {
         </div>
         <div class="timeline" hidden>
           <button class="play" type="button" title="Play">&#9654;</button>
+          <button class="speed" type="button" title="Playback speed">1&times;</button>
           <span class="time">LIVE</span>
           <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
           <button class="live" type="button">LIVE</button>
@@ -5207,6 +5219,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     this._legend = this.shadowRoot.querySelector('.legend');
     this._timeline = this.shadowRoot.querySelector('.timeline');
     this._timelinePlay = this.shadowRoot.querySelector('.timeline .play');
+    this._timelineSpeed = this.shadowRoot.querySelector('.timeline .speed');
     this._timelineTime = this.shadowRoot.querySelector('.timeline .time');
     this._timelineSlider = this.shadowRoot.querySelector('.timeline-slider');
     this._timelineLive = this.shadowRoot.querySelector('.timeline .live');
@@ -5222,6 +5235,10 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     this._timelinePlay.addEventListener('click', () => {
       this._togglePlayback();
+    });
+
+    this._timelineSpeed.addEventListener('click', () => {
+      this._cyclePlaybackSpeed();
     });
 
     this._timelineSlider.addEventListener('input', (event) => {
@@ -5426,7 +5443,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     }
   }
 
-    _onTimelineInput(event) {
+  _onTimelineInput(event) {
     this._stopPlayback();
 
     if (!this._history || !this._historyFrames) return;
@@ -5450,6 +5467,17 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     this._updateTimelineUi();
     this._update(true);
+  }
+
+  _cyclePlaybackSpeed() {
+    const speeds = [0.5, 1, 2, 4];
+    const current = speeds.indexOf(this._playbackSpeed);
+    this._playbackSpeed = speeds[(current + 1) % speeds.length];
+    this._updateTimelineUi();
+  }
+
+  _playbackDelay() {
+    return 350 / this._playbackSpeed;
   }
 
   _togglePlayback() {
@@ -5493,8 +5521,11 @@ class FloorplanHeatmapCard extends HTMLElement {
 
       index += 1;
 
-      // 350 ms per historical frame.
-      this._playTimer = setTimeout(advance, 350);
+      // 350 ms per historical frame at 1x speed.
+      this._playTimer = setTimeout(
+        advance,
+        this._playbackDelay()
+      );
     };
 
     // Non-zero marker tells the UI that playback is active.
@@ -5553,6 +5584,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     if (this._historyLoading) {
       this._timelineTime.textContent = 'Loading history…';
       this._timelinePlay.disabled = true;
+      this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
@@ -5561,6 +5593,7 @@ class FloorplanHeatmapCard extends HTMLElement {
     if (this._historyError) {
       this._timelineTime.textContent = 'History unavailable';
       this._timelinePlay.disabled = true;
+      this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
@@ -5569,16 +5602,22 @@ class FloorplanHeatmapCard extends HTMLElement {
     if (!this._history || !this._historyFrames) {
       this._timelineTime.textContent = 'LIVE';
       this._timelinePlay.disabled = true;
+      this._timelineSpeed.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
     }
 
     this._timelinePlay.disabled = false;
+    this._timelineSpeed.disabled = false;
+
     this._timelinePlay.textContent =
       this._playTimer ? '\u275A\u275A' : '\u25B6';
     this._timelinePlay.title =
       this._playTimer ? 'Pause' : 'Play';
+
+    this._timelineSpeed.textContent =
+      `${this._playbackSpeed}\u00D7`;
 
     this._timelineSlider.disabled = false;
     this._timelineSlider.min = '0';
