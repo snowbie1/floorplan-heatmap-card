@@ -174,6 +174,7 @@ const CARD_STYLES = `
     opacity: 0.45;
     cursor: default;
   }
+  .timeline .play,
   .timeline .live {
     border: 1px solid var(--divider-color, rgba(127,140,158,.35));
     border-radius: 999px;
@@ -184,6 +185,15 @@ const CARD_STYLES = `
     font-weight: 600;
     cursor: pointer;
   }
+  .timeline .play {
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .timeline .play:disabled,
   .timeline .live:disabled {
     opacity: 0.45;
     cursor: default;
@@ -238,6 +248,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._historyFrames = 0;
     this._selectedHistoryTime = null;
     this._historyRequestToken = 0;
+    this._playTimer = 0;
   }
 
   setConfig(config) {
@@ -247,7 +258,13 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._fieldSignature = '';
     this._lastValues = null;
     this._buffer = null;
-	// Eine geänderte Konfiguration kann andere Sensoren oder einen anderen
+
+    if (this._playTimer) {
+      clearTimeout(this._playTimer);
+      this._playTimer = 0;
+    }
+
+    // Eine geänderte Konfiguration kann andere Sensoren oder einen anderen
     // Zeitraum verwenden. Laufende History-Anfragen werden dadurch ungültig.
     this._historyRequestToken += 1;
     this._history = null;
@@ -298,6 +315,11 @@ export class FloorplanHeatmapCard extends HTMLElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+
+    if (this._playTimer) {
+      clearTimeout(this._playTimer);
+      this._playTimer = 0;
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -323,6 +345,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
           <span class="hi"></span>
         </div>
         <div class="timeline" hidden>
+          <button class="play" type="button" title="Play">&#9654;</button>
           <span class="time">LIVE</span>
           <input class="timeline-slider" type="range" min="0" max="1" step="1" value="1">
           <button class="live" type="button">LIVE</button>
@@ -343,6 +366,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._tooltip = this.shadowRoot.querySelector('.tooltip');
     this._legend = this.shadowRoot.querySelector('.legend');
     this._timeline = this.shadowRoot.querySelector('.timeline');
+    this._timelinePlay = this.shadowRoot.querySelector('.timeline .play');
     this._timelineTime = this.shadowRoot.querySelector('.timeline .time');
     this._timelineSlider = this.shadowRoot.querySelector('.timeline-slider');
     this._timelineLive = this.shadowRoot.querySelector('.timeline .live');
@@ -354,7 +378,11 @@ export class FloorplanHeatmapCard extends HTMLElement {
     header.hidden = !cfg.title;
     this._titleEl.textContent = cfg.title || '';
     this._legend.hidden = !cfg.show_legend;
-	this._timeline.hidden = !cfg.show_timeline;
+    this._timeline.hidden = !cfg.show_timeline;
+
+    this._timelinePlay.addEventListener('click', () => {
+      this._togglePlayback();
+    });
 
     this._timelineSlider.addEventListener('input', (event) => {
       this._onTimelineInput(event);
@@ -558,7 +586,9 @@ export class FloorplanHeatmapCard extends HTMLElement {
     }
   }
 
-  _onTimelineInput(event) {
+    _onTimelineInput(event) {
+    this._stopPlayback();
+
     if (!this._history || !this._historyFrames) return;
 
     const index = Math.max(
@@ -582,7 +612,72 @@ export class FloorplanHeatmapCard extends HTMLElement {
     this._update(true);
   }
 
+  _togglePlayback() {
+    if (this._playTimer) {
+      this._stopPlayback();
+      return;
+    }
+
+    if (!this._history || !this._historyFrames) return;
+
+    let index;
+
+    if (this._selectedHistoryTime == null) {
+      // Start at the beginning when Play is pressed from LIVE.
+      index = 0;
+    } else {
+      index = Math.round(
+        (this._selectedHistoryTime - this._historyStart) /
+          this._historyStepMs
+      );
+
+      // Continue with the next frame instead of replaying
+      // the frame already shown.
+      index += 1;
+
+      if (index >= this._historyFrames) index = 0;
+    }
+
+    const advance = () => {
+      if (!this._history || index >= this._historyFrames) {
+        this._stopPlayback();
+        this._setLive();
+        return;
+      }
+
+      this._selectedHistoryTime =
+        this._historyStart + index * this._historyStepMs;
+
+      this._updateTimelineUi();
+      this._update(true);
+
+      index += 1;
+
+      // 350 ms per historical frame.
+      this._playTimer = setTimeout(advance, 350);
+    };
+
+    // Non-zero marker tells the UI that playback is active.
+    this._playTimer = -1;
+    this._updateTimelineUi();
+    advance();
+  }
+
+  _stopPlayback() {
+    if (this._playTimer > 0) {
+      clearTimeout(this._playTimer);
+    }
+
+    this._playTimer = 0;
+
+    if (this._timelinePlay) {
+      this._timelinePlay.textContent = '\u25B6';
+      this._timelinePlay.title = 'Play';
+    }
+  }
+
   _setLive() {
+    this._stopPlayback();
     this._selectedHistoryTime = null;
     this._updateTimelineUi();
     this._update(true);
@@ -617,6 +712,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
 
     if (this._historyLoading) {
       this._timelineTime.textContent = 'Loading history…';
+      this._timelinePlay.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
@@ -624,6 +720,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
 
     if (this._historyError) {
       this._timelineTime.textContent = 'History unavailable';
+      this._timelinePlay.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
@@ -631,10 +728,17 @@ export class FloorplanHeatmapCard extends HTMLElement {
 
     if (!this._history || !this._historyFrames) {
       this._timelineTime.textContent = 'LIVE';
+      this._timelinePlay.disabled = true;
       this._timelineSlider.disabled = true;
       this._timelineLive.disabled = true;
       return;
     }
+
+    this._timelinePlay.disabled = false;
+    this._timelinePlay.textContent =
+      this._playTimer ? '\u275A\u275A' : '\u25B6';
+    this._timelinePlay.title =
+      this._playTimer ? 'Pause' : 'Play';
 
     this._timelineSlider.disabled = false;
     this._timelineSlider.min = '0';
