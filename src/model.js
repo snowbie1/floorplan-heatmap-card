@@ -42,6 +42,11 @@ export const DEFAULTS = {
   background_opacity: 0.25,
   aspect_ratio: '',
 
+  // Zeitleiste / historische Wiedergabe
+  show_timeline: false,
+  history_hours: 24,
+  history_step_minutes: 15,
+
   // 2,5D-Ansicht
   view_mode: 'flat',   // 'flat' = Draufsicht, 'tilted' = aufgestellte Wände
   yaw: -22,            // Grad, Drehung um die Hochachse
@@ -116,6 +121,16 @@ export function normalizeConfig(raw) {
   config.transmittance = { ...DEFAULT_TRANSMITTANCE, ...(raw && raw.transmittance ? raw.transmittance : {}) };
   config.cell_size = Math.max(2, Number(config.cell_size) || DEFAULTS.cell_size);
   config.px_per_meter = Math.max(1, Number(config.px_per_meter) || DEFAULTS.px_per_meter);
+
+  config.show_timeline = config.show_timeline === true;
+  config.history_hours = Math.min(
+    168,
+    Math.max(1, Number(config.history_hours) || DEFAULTS.history_hours)
+  );
+  config.history_step_minutes = Math.min(
+    60,
+    Math.max(1, Number(config.history_step_minutes) || DEFAULTS.history_step_minutes)
+  );
 
   const num = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
   config.view_mode = VIEW_MODES.includes(config.view_mode) ? config.view_mode : DEFAULTS.view_mode;
