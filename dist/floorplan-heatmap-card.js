@@ -5594,7 +5594,7 @@ class FloorplanHeatmapCard extends HTMLElement {
 
     this._timelineLive.disabled = live;
   }
-  
+
   _computeRange() {
     const cfg = this._config;
     if (!cfg.auto_range || !this._field || !this._field.stats) {
