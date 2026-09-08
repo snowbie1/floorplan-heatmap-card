@@ -19,7 +19,13 @@ import { renderScene } from './scene3d.js';
 import { paletteGradientCss, paletteColorCss, readableTextOn, paletteLUT } from './palette.js';
 import { clamp } from './geometry.js';
 import { t, detectLanguage, detectLanguageFallback } from './i18n.js';
-import { uniqueHistoryEntityIds, normalizeHistory, sensorValuesAt, fetchHistory } from './history.js';
+import {
+  uniqueHistoryEntityIds,
+  normalizeHistory,
+  sensorValuesAt,
+  extractSunEvents,
+  fetchHistory,
+} from './history.js';
 
 const CARD_STYLES = `
   :host { display: block; }
@@ -861,65 +867,6 @@ export class FloorplanHeatmapCard extends HTMLElement {
     }
   }
 
-  _historyStateTime(state) {
-    if (!state) return NaN;
-
-    const raw =
-      state.lu ??
-      state.lc ??
-      state.last_updated ??
-      state.last_changed;
-
-    if (typeof raw === 'number') {
-      return raw > 1e12 ? raw : raw * 1000;
-    }
-
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-
-  _extractSunEvents(rawHistory, startMs, endMs) {
-    const states =
-      rawHistory &&
-      Array.isArray(rawHistory['sun.sun'])
-        ? rawHistory['sun.sun']
-        : [];
-
-    const events = [];
-    let previousState = null;
-
-    for (const state of states) {
-      const value =
-        state && typeof state.s === 'string'
-          ? state.s
-          : state && typeof state.state === 'string'
-            ? state.state
-            : null;
-
-      const time = this._historyStateTime(state);
-
-      if (
-        previousState != null &&
-        value !== previousState &&
-        Number.isFinite(time) &&
-        time >= startMs &&
-        time <= endMs
-      ) {
-        if (value === 'above_horizon') {
-          events.push({ type: 'sunrise', time });
-        } else if (value === 'below_horizon') {
-          events.push({ type: 'sunset', time });
-        }
-      }
-
-      if (value != null) {
-        previousState = value;
-      }
-    }
-
-    return events;
-  }
-
   _renderSunMarkers() {
     if (!this._timelineSunMarkers) return;
 
@@ -1036,7 +983,7 @@ export class FloorplanHeatmapCard extends HTMLElement {
       if (token !== this._historyRequestToken) return;
 
       this._history = normalizeHistory(raw);
-      this._sunEvents = this._extractSunEvents(
+      this._sunEvents = extractSunEvents(
         raw,
         startMs,
         endMs

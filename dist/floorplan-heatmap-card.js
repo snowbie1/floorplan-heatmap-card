@@ -4229,6 +4229,83 @@ function sensorValuesAt(history, sensors = [], targetTime) {
 }
 
 /**
+ * Sonnenauf- und -untergänge aus der History von sun.sun ableiten.
+ *
+ * Ein Ereignis entsteht nur bei einem echten Zustandswechsel:
+ *   below_horizon -> above_horizon = sunrise
+ *   above_horizon -> below_horizon = sunset
+ *
+ * Der erste bekannte Zustand dient nur als Ausgangswert und wird nicht
+ * selbst als Ereignis gezählt. Dadurch bleibt auch der von Home Assistant
+ * am Beginn eines History-Zeitraums mitgelieferte Startzustand korrekt.
+ */
+function extractSunEvents(
+  rawHistory = {},
+  startTime = -Infinity,
+  endTime = Infinity,
+  entityId = 'sun.sun'
+) {
+  const states =
+    rawHistory && Array.isArray(rawHistory[entityId])
+      ? rawHistory[entityId]
+      : [];
+
+  const start =
+    startTime instanceof Date ? startTime.getTime() : Number(startTime);
+  const end =
+    endTime instanceof Date ? endTime.getTime() : Number(endTime);
+
+  const startMs = Number.isFinite(start) ? start : -Infinity;
+  const endMs = Number.isFinite(end) ? end : Infinity;
+
+  const points = states
+    .map((state) => {
+      const value =
+        state && typeof state.s === 'string'
+          ? state.s
+          : state && typeof state.state === 'string'
+            ? state.state
+            : null;
+
+      return {
+        time: historyTimestampMs(state),
+        value,
+      };
+    })
+    .filter(
+      (point) =>
+        Number.isFinite(point.time) &&
+        (point.value === 'above_horizon' ||
+          point.value === 'below_horizon')
+    )
+    .sort((a, b) => a.time - b.time);
+
+  const events = [];
+  let previousState = null;
+
+  for (const point of points) {
+    if (
+      previousState != null &&
+      point.value !== previousState &&
+      point.time >= startMs &&
+      point.time <= endMs
+    ) {
+      events.push({
+        type:
+          point.value === 'above_horizon'
+            ? 'sunrise'
+            : 'sunset',
+        time: point.time,
+      });
+    }
+
+    previousState = point.value;
+  }
+
+  return events;
+}
+
+/**
  * Historische Zustände direkt über Home Assistants WebSocket-API laden.
  */
 function fetchHistory(hass, startTime, endTime, entityIds = []) {
@@ -5112,65 +5189,6 @@ class FloorplanHeatmapCard extends HTMLElement {
     }
   }
 
-  _historyStateTime(state) {
-    if (!state) return NaN;
-
-    const raw =
-      state.lu ??
-      state.lc ??
-      state.last_updated ??
-      state.last_changed;
-
-    if (typeof raw === 'number') {
-      return raw > 1e12 ? raw : raw * 1000;
-    }
-
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-
-  _extractSunEvents(rawHistory, startMs, endMs) {
-    const states =
-      rawHistory &&
-      Array.isArray(rawHistory['sun.sun'])
-        ? rawHistory['sun.sun']
-        : [];
-
-    const events = [];
-    let previousState = null;
-
-    for (const state of states) {
-      const value =
-        state && typeof state.s === 'string'
-          ? state.s
-          : state && typeof state.state === 'string'
-            ? state.state
-            : null;
-
-      const time = this._historyStateTime(state);
-
-      if (
-        previousState != null &&
-        value !== previousState &&
-        Number.isFinite(time) &&
-        time >= startMs &&
-        time <= endMs
-      ) {
-        if (value === 'above_horizon') {
-          events.push({ type: 'sunrise', time });
-        } else if (value === 'below_horizon') {
-          events.push({ type: 'sunset', time });
-        }
-      }
-
-      if (value != null) {
-        previousState = value;
-      }
-    }
-
-    return events;
-  }
-
   _renderSunMarkers() {
     if (!this._timelineSunMarkers) return;
 
@@ -5287,7 +5305,7 @@ class FloorplanHeatmapCard extends HTMLElement {
       if (token !== this._historyRequestToken) return;
 
       this._history = normalizeHistory(raw);
-      this._sunEvents = this._extractSunEvents(
+      this._sunEvents = extractSunEvents(
         raw,
         startMs,
         endMs

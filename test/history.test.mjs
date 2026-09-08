@@ -8,6 +8,7 @@ import {
   normalizeHistory,
   historyValueAt,
   sensorValuesAt,
+  extractSunEvents,
   fetchHistory,
 } from '../src/history.js';
 
@@ -120,6 +121,86 @@ test('sensorValuesAt preserves sensor order and supports duplicate entities', ()
   assert.equal(values[1], 45);
   assert.equal(values[2], 23);
   assert.ok(Number.isNaN(values[3]));
+});
+
+test('extractSunEvents detects sunrise and sunset transitions', () => {
+  const raw = {
+    'sun.sun': [
+      { s: 'below_horizon', lu: 100 },
+      { s: 'above_horizon', lu: 200 },
+      { s: 'below_horizon', lu: 300 },
+    ],
+  };
+
+  assert.deepEqual(extractSunEvents(raw, 100_000, 300_000), [
+    { type: 'sunrise', time: 200_000 },
+    { type: 'sunset', time: 300_000 },
+  ]);
+});
+
+test('extractSunEvents ignores duplicate states and the first state', () => {
+  const raw = {
+    'sun.sun': [
+      { s: 'below_horizon', lu: 100 },
+      { s: 'below_horizon', lu: 150 },
+      { s: 'above_horizon', lu: 200 },
+      { s: 'above_horizon', lu: 250 },
+    ],
+  };
+
+  assert.deepEqual(extractSunEvents(raw, 0, 999_000), [
+    { type: 'sunrise', time: 200_000 },
+  ]);
+});
+
+test('extractSunEvents sorts history and filters events outside the requested range', () => {
+  const raw = {
+    'sun.sun': [
+      { s: 'below_horizon', lu: 500 },
+      { s: 'below_horizon', lu: 100 },
+      { s: 'above_horizon', lu: 200 },
+      { s: 'below_horizon', lu: 300 },
+      { s: 'above_horizon', lu: 400 },
+    ],
+  };
+
+  assert.deepEqual(extractSunEvents(raw, 250_000, 450_000), [
+    { type: 'sunset', time: 300_000 },
+    { type: 'sunrise', time: 400_000 },
+  ]);
+});
+
+test('extractSunEvents accepts full HA state fields and ignores invalid sun states', () => {
+  const raw = {
+    'sun.sun': [
+      {
+        state: 'below_horizon',
+        last_changed: '2026-09-07T06:00:00Z',
+      },
+      {
+        state: 'unknown',
+        last_changed: '2026-09-07T06:10:00Z',
+      },
+      {
+        state: 'above_horizon',
+        last_changed: '2026-09-07T06:30:00Z',
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    extractSunEvents(
+      raw,
+      new Date('2026-09-07T06:00:00Z'),
+      new Date('2026-09-07T07:00:00Z')
+    ),
+    [
+      {
+        type: 'sunrise',
+        time: Date.parse('2026-09-07T06:30:00Z'),
+      },
+    ]
+  );
 });
 
 test('fetchHistory sends the compact history request expected by Home Assistant', async () => {

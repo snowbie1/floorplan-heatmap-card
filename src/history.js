@@ -157,6 +157,83 @@ export function sensorValuesAt(history, sensors = [], targetTime) {
 }
 
 /**
+ * Sonnenauf- und -untergänge aus der History von sun.sun ableiten.
+ *
+ * Ein Ereignis entsteht nur bei einem echten Zustandswechsel:
+ *   below_horizon -> above_horizon = sunrise
+ *   above_horizon -> below_horizon = sunset
+ *
+ * Der erste bekannte Zustand dient nur als Ausgangswert und wird nicht
+ * selbst als Ereignis gezählt. Dadurch bleibt auch der von Home Assistant
+ * am Beginn eines History-Zeitraums mitgelieferte Startzustand korrekt.
+ */
+export function extractSunEvents(
+  rawHistory = {},
+  startTime = -Infinity,
+  endTime = Infinity,
+  entityId = 'sun.sun'
+) {
+  const states =
+    rawHistory && Array.isArray(rawHistory[entityId])
+      ? rawHistory[entityId]
+      : [];
+
+  const start =
+    startTime instanceof Date ? startTime.getTime() : Number(startTime);
+  const end =
+    endTime instanceof Date ? endTime.getTime() : Number(endTime);
+
+  const startMs = Number.isFinite(start) ? start : -Infinity;
+  const endMs = Number.isFinite(end) ? end : Infinity;
+
+  const points = states
+    .map((state) => {
+      const value =
+        state && typeof state.s === 'string'
+          ? state.s
+          : state && typeof state.state === 'string'
+            ? state.state
+            : null;
+
+      return {
+        time: historyTimestampMs(state),
+        value,
+      };
+    })
+    .filter(
+      (point) =>
+        Number.isFinite(point.time) &&
+        (point.value === 'above_horizon' ||
+          point.value === 'below_horizon')
+    )
+    .sort((a, b) => a.time - b.time);
+
+  const events = [];
+  let previousState = null;
+
+  for (const point of points) {
+    if (
+      previousState != null &&
+      point.value !== previousState &&
+      point.time >= startMs &&
+      point.time <= endMs
+    ) {
+      events.push({
+        type:
+          point.value === 'above_horizon'
+            ? 'sunrise'
+            : 'sunset',
+        time: point.time,
+      });
+    }
+
+    previousState = point.value;
+  }
+
+  return events;
+}
+
+/**
  * Historische Zustände direkt über Home Assistants WebSocket-API laden.
  */
 export function fetchHistory(hass, startTime, endTime, entityIds = []) {
